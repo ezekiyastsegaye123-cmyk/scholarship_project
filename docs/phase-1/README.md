@@ -2,7 +2,7 @@
 
 **Project:** Scholarship Discovery, Verification & Counselor Platform  
 **Governing Standard:** `Antigravity Phase 0 — Skills-Aware Addendum.md` & Phase 1 Prompts  
-**Active Sub-Phase:** Phase 1E Complete (`READY_FOR_PHASE_1F` — Awaiting Phase 1F Gate Authorization)  
+**Active Sub-Phase:** Phase 1 Complete (`PHASE_1_COMPLETE = YES`, `READY_FOR_PHASE_2 = YES` — Awaiting Explicit User Gate Authorization)  
 
 ---
 
@@ -18,7 +18,7 @@ flowchart LR
     P1B --> P1C["Phase 1C<br/>Verification, Provenance,<br/>Liveness & Conflict Engine<br/>(COMPLETED ✅)"]
     P1C --> P1D["Phase 1D<br/>Deterministic Rule<br/>& Constraint Evaluator<br/>(COMPLETED ✅)"]
     P1D --> P1E["Phase 1E<br/>Qualitative Counselor<br/>Module<br/>(COMPLETED ✅)"]
-    P1E --> P1F["Phase 1F<br/>Behavioral Benchmark<br/>& Test Validation<br/>(NEXT GATE)"]
+    P1E --> P1F["Phase 1F<br/>Benchmark, Stress Validation<br/>& Final Phase 1 Evaluation<br/>(COMPLETED ✅)"]
 ```
 
 ---
@@ -67,13 +67,21 @@ flowchart LR
 7. **Source-Aware Provenance:** Evidence quotes and authority tiers attached to every factual assertion.
 8. **172/172 Passing Tests:** 29 dedicated Phase 1E tests (including 8 golden test cases, 100-run determinism test, and AST security audit) + 143 prior tests passing with zero regressions.
 
+### Phase 1F: Benchmark, Stress Validation & Final Phase 1 Evaluation (COMPLETED ✅)
+1. **22 Benchmarks (A through V):** End-to-end evaluation covering all functional, epistemic, and edge scenarios.
+2. **Adversarial & Property-Style Validation:** Resilient against empty profiles, missing relations, malformed ASTs, and out-of-bounds inputs.
+3. **Epistemic Invariants:** `UNKNOWN != NO`, `UNKNOWN != YES`, `UNKNOWN != NOT_APPLICABLE`, `CONFLICTING != NO`, `CONFLICTING != YES` strictly maintained.
+4. **Phase 1D -> 1E Contract Preservation:** Phase 1E preserves all 6 eligibility engine statuses without alteration.
+5. **Verification State Gating:** All 7 verification states gated and surfaced with transparent warning notices.
+6. **Stress & Throughput:** 250 end-to-end evaluations across 50 opportunities and 5 profiles completed in 0.43s (~1.7ms / eval).
+7. **Static Security & Quality Audit:** Clean AST inspection with zero `eval`, `exec`, `compile`, or `__import__`, zero LLM/vector dependencies, and zero prohibited score attributes.
+8. **238/238 Passing Tests:** 56 dedicated Phase 1F validation tests + 182 prior tests passing with zero regressions.
+
 ---
 
-## 3. Upcoming Sub-Phase (1F)
+## 3. Transition to Phase 2
 
-- **Phase 1F (Comprehensive Verification & Benchmarking):** Execution of formal specification test cases and empirical latency benchmarking over the seed dataset.
-
----
+Phase 1 backend is fully validated and locked. Transition to Phase 2 (FastAPI application, Student Accounts & Web Frontend) is awaiting explicit user authorization.
 
 ## 4. Architectural Boundaries & Deliberate Exclusions
 

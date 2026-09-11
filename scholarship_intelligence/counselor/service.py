@@ -56,7 +56,7 @@ class ScholarshipCounselorService:
     ) -> CounselorAssessmentResult:
         """Generates a complete qualitative counselor assessment."""
         opp_id = getattr(opportunity, "id", None)
-        opp_title = getattr(opportunity, "title", "Scholarship Opportunity")
+        opp_title = getattr(opportunity, "title", None) or "Scholarship Opportunity"
         student_id = getattr(student_profile, "id", None) if not isinstance(student_profile, dict) else student_profile.get("id")
 
         # 1. Dimensional qualitative evaluations
@@ -71,7 +71,10 @@ class ScholarshipCounselorService:
         # 2. Verification context
         v_status_raw = getattr(opportunity, "verification_status", VerificationState.UNVERIFIED.value)
         v_status = VerificationState(v_status_raw) if isinstance(v_status_raw, str) else v_status_raw
-        contains_unverified = eligibility_result.evaluation_contains_unverified_facts
+        contains_unverified = bool(
+            eligibility_result.evaluation_contains_unverified_facts
+            or v_status == VerificationState.PARTIALLY_VERIFIED
+        )
 
         verif_warning = False
         verif_msg = None
@@ -84,6 +87,18 @@ class ScholarshipCounselorService:
         elif v_status == VerificationState.CONFLICTING:
             verif_warning = True
             verif_msg = "Notice: Contradictory evidence exists across official sources. Manual review required."
+        elif v_status == VerificationState.UNVERIFIED:
+            verif_warning = True
+            verif_msg = "Notice: Opportunity information is UNVERIFIED. Direct provider verification required."
+        elif v_status == VerificationState.OUTDATED:
+            verif_warning = True
+            verif_msg = "Notice: Opportunity verification is OUTDATED. Rules must be reverified for current cycle."
+        elif v_status == VerificationState.SOURCE_UNAVAILABLE:
+            verif_warning = True
+            verif_msg = "Notice: Official provider source is currently UNAVAILABLE or inaccessible."
+        elif v_status == VerificationState.QUARANTINED_FOR_REVIEW:
+            verif_warning = True
+            verif_msg = "Notice: Opportunity is QUARANTINED_FOR_REVIEW due to material verification concerns."
 
         verif_ctx = VerificationWarningContext(
             verification_status=v_status,
