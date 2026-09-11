@@ -183,6 +183,31 @@ class CandidateNormalizer:
             title, extracted, fetch_result, authority_tier, funding_components, need_required
         )
 
+        # Fallback evidence anchor from document title or description if specific sub-facts lacked evidence
+        if not all_evidence:
+            if extracted.title:
+                all_evidence.append(
+                    self._create_evidence(
+                        f"Opportunity title: {title}",
+                        fetch_result,
+                        "Document Heading/Title",
+                        authority_tier,
+                    )
+                )
+            elif extracted.meta_description:
+                all_evidence.append(
+                    self._create_evidence(
+                        extracted.meta_description,
+                        fetch_result,
+                        "Meta Description",
+                        authority_tier,
+                    )
+                )
+
+        if not all_evidence:
+            # Without any supporting evidence, candidate staging is prohibited
+            return None
+
         return CandidateOpportunity(
             title=title,
             description=extracted.meta_description,

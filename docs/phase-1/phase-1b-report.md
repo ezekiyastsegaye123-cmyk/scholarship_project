@@ -120,14 +120,20 @@ The candidate models in `scholarship_intelligence/schemas/candidate.py` represen
 ## E. Failure Handling
 
 HTTP and extraction failures are explicitly categorized into `FetchStatusCategory`:
-- `SUCCESS`: HTTP 200 with verified HTML content.
+- `SUCCESS`: HTTP 200 with acceptable HTML content successfully fetched.
 - `HTTP_403`: Access forbidden / bot challenge detected. Handled politely by recording state; **no CAPTCHA bypass attempted**.
 - `HTTP_404`: Dead link. Recorded for downstream provenance audits.
 - `HTTP_429`: Rate limit exceeded. Recorded politely; **no hammering**.
 - `HTTP_5XX`: Upstream server failure. Triggers bounded exponential backoff ($0.5s \times 2^{attempt}$) up to 3 retries.
 - `TIMEOUT`: Connection or read timeout exceeded.
 - `DNS_ERROR` / `CONNECTION_ERROR`: Hostname resolution or TCP connection drop.
-- `INVALID_CONTENT`: Oversized response (> 5MB), unsupported MIME type, or unsafe URL.
+- `INVALID_CONTENT`: Oversized response (> 5MB during streaming chunk read or header), unsupported MIME type, or unsafe URL.
+
+### Hardening Enhancements:
+1. **Streaming Response-Size Enforcement:** Enforced during byte streaming via `client.stream()`. Bytes are counted chunk-by-chunk (16 KB), immediately terminating the connection if the cumulative size exceeds 5 MB. This prevents memory buffering attacks even if the server omits or falsifies `Content-Length`.
+2. **Conservative Polite Request Pacing:** `PoliteHttpClient` enforces a conservative default delay of `0.5` seconds between consecutive network requests out-of-the-box.
+3. **Evidence-per-Material-Fact Invariant:** `CandidateOpportunity` enforces a Pydantic `@model_validator` that strictly rejects candidate opportunities instantiated without supporting `CandidateEvidence`.
+4. **Narrow Network Exception Scope:** Replaced broad `except Exception` with explicit `httpx` transport exceptions (`httpx.TimeoutException`, `httpx.ConnectError`, `httpx.NetworkError`, `httpx.ProtocolError`, `httpx.DecodingError`), allowing unexpected programming defects to surface directly rather than being disguised as network failures.
 
 ---
 
@@ -186,43 +192,49 @@ tests/test_ingestion_client.py::test_fetch_oversized_response PASSED     [ 36%]
 tests/test_ingestion_client.py::test_fetch_invalid_content_type PASSED   [ 38%]
 tests/test_ingestion_evidence.py::test_deterministic_content_hashing PASSED [ 40%]
 tests/test_ingestion_evidence.py::test_evidence_traceability_on_candidate_facts PASSED [ 41%]
-tests/test_ingestion_evidence.py::test_candidate_evidence_immutability PASSED [ 43%]
-tests/test_ingestion_extraction.py::test_extract_normal_scholarship_page PASSED [ 45%]
-tests/test_ingestion_extraction.py::test_extract_tables PASSED           [ 46%]
-tests/test_ingestion_extraction.py::test_extract_malformed_html PASSED   [ 48%]
-tests/test_ingestion_extraction.py::test_extract_empty_sections PASSED   [ 50%]
-tests/test_ingestion_golden_hierarchy.py::test_golden_hierarchy_no_overwrite_of_verified_record PASSED [ 51%]
-tests/test_ingestion_normalization.py::test_normalization_standard_page PASSED [ 53%]
-tests/test_ingestion_normalization.py::test_normalization_funding_decomposition PASSED [ 55%]
-tests/test_ingestion_normalization.py::test_normalization_missing_info_preserves_unknown PASSED [ 56%]
-tests/test_ingestion_safety.py::test_url_safety_scheme_validation PASSED [ 58%]
-tests/test_ingestion_safety.py::test_url_safety_length_limit PASSED      [ 60%]
-tests/test_ingestion_safety.py::test_malformed_url_safety PASSED         [ 61%]
-tests/test_ingestion_safety.py::test_no_eval_or_exec_in_ingestion_codebase PASSED [ 63%]
-tests/test_no_fabrication.py::test_no_fabricated_facts_in_seeded_opportunities PASSED [ 65%]
-tests/test_privacy.py::test_forbidden_fields_rejected_by_schema PASSED   [ 66%]
-tests/test_privacy.py::test_database_model_has_no_forbidden_columns PASSED [ 68%]
-tests/test_provenance.py::test_authority_tier_hierarchy PASSED           [ 70%]
-tests/test_provenance.py::test_official_source_provenance_anchor PASSED  [ 71%]
-tests/test_discovery_source_lead PASSED              [ 73%]
-tests/test_schemas.py::test_university_create_valid PASSED               [ 75%]
-tests/test_schemas.py::test_provider_create_valid PASSED                 [ 76%]
-tests/test_schemas.py::test_opportunity_create_nested PASSED             [ 78%]
-tests/test_schemas.py::test_opportunity_invalid_slug PASSED              [ 80%]
-tests/test_seed_idempotency.py::test_seed_idempotency PASSED             [ 81%]
-tests/test_seed_idempotency.py::test_seed_transactional_rollback PASSED  [ 83%]
+tests/test_ingestion_client.py::test_fetch_streaming_chunked_size_enforcement_without_content_length PASSED [ 37%]
+tests/test_ingestion_client.py::test_polite_http_client_default_delay_is_conservative PASSED [ 39%]
+tests/test_ingestion_client.py::test_fetch_unexpected_exception_surfaces_instead_of_masked_connection_error PASSED [ 40%]
+tests/test_ingestion_evidence.py::test_deterministic_content_hashing PASSED [ 42%]
+tests/test_ingestion_evidence.py::test_evidence_traceability_on_candidate_facts PASSED [ 43%]
+tests/test_ingestion_evidence.py::test_candidate_evidence_immutability PASSED [ 45%]
+tests/test_ingestion_evidence.py::test_candidate_opportunity_requires_evidence_invariant PASSED [ 46%]
+tests/test_ingestion_extraction.py::test_extract_normal_scholarship_page PASSED [ 48%]
+tests/test_ingestion_extraction.py::test_extract_tables PASSED           [ 50%]
+tests/test_ingestion_extraction.py::test_extract_malformed_html PASSED   [ 51%]
+tests/test_ingestion_extraction.py::test_extract_empty_sections PASSED   [ 53%]
+tests/test_ingestion_golden_hierarchy.py::test_golden_hierarchy_no_overwrite_of_verified_record PASSED [ 54%]
+tests/test_ingestion_normalization.py::test_normalization_standard_page PASSED [ 56%]
+tests/test_ingestion_normalization.py::test_normalization_funding_decomposition PASSED [ 57%]
+tests/test_ingestion_normalization.py::test_normalization_missing_info_preserves_unknown PASSED [ 59%]
+tests/test_ingestion_safety.py::test_url_safety_scheme_validation PASSED [ 60%]
+tests/test_ingestion_safety.py::test_url_safety_length_limit PASSED      [ 62%]
+tests/test_ingestion_safety.py::test_malformed_url_safety PASSED         [ 64%]
+tests/test_ingestion_safety.py::test_no_eval_or_exec_in_ingestion_codebase PASSED [ 65%]
+tests/test_no_fabrication.py::test_no_fabricated_facts_in_seeded_opportunities PASSED [ 67%]
+tests/test_privacy.py::test_forbidden_fields_rejected_by_schema PASSED   [ 68%]
+tests/test_privacy.py::test_database_model_has_no_forbidden_columns PASSED [ 70%]
+tests/test_provenance.py::test_authority_tier_hierarchy PASSED           [ 71%]
+tests/test_provenance.py::test_official_source_provenance_anchor PASSED  [ 73%]
+tests/test_discovery_source_lead PASSED              [ 75%]
+tests/test_schemas.py::test_university_create_valid PASSED               [ 76%]
+tests/test_schemas.py::test_provider_create_valid PASSED                 [ 78%]
+tests/test_schemas.py::test_opportunity_create_nested PASSED             [ 79%]
+tests/test_schemas.py::test_opportunity_invalid_slug PASSED              [ 81%]
+tests/test_seed_idempotency.py::test_seed_idempotency PASSED             [ 82%]
+tests/test_seed_idempotency.py::test_seed_transactional_rollback PASSED  [ 84%]
 tests/test_student_profile.py::test_valid_student_profile PASSED         [ 85%]
 tests/test_student_profile.py::test_invalid_gpa_range PASSED             [ 86%]
 tests/test_student_profile.py::test_missing_required_demographics PASSED [ 88%]
 tests/test_tristate.py::test_tristate_enum_values PASSED                 [ 90%]
-tests/test_tristate.py::test_tristate_unknown_not_false_or_no PASSED     [ 91%]
+tests/test_tristate.py::test_tristate_unknown_not_false_or_no PASSED     [ 92%]
 tests/test_tristate.py::test_tristate_in_schema_defaults_to_unknown PASSED [ 93%]
 tests/test_tristate.py::test_tristate_invalid_value_rejection PASSED     [ 95%]
 tests/test_verification.py::test_verification_states PASSED              [ 96%]
 tests/test_verification.py::test_quarantined_for_review_semantics PASSED [ 98%]
 tests/test_verified_record_with_official_citation PASSED [100%]
 
-============================== 60 passed in 1.18s ==============================
+============================== 64 passed in 2.71s ==============================
 ```
 
 ---
@@ -230,8 +242,8 @@ tests/test_verified_record_with_official_citation PASSED [100%]
 ## I. Regression Results
 
 - Phase 1A baseline tests: **34 passed**
-- Phase 1B ingestion tests: **26 passed**
-- Total test count: **60 passed**
+- Phase 1B ingestion tests: **30 passed**
+- Total test count: **64 passed**
 - Failures / Warnings: **0 failures, 0 errors**
 
 ---
@@ -262,4 +274,4 @@ Codebase audit confirms zero prohibited leakage:
 
 $$\mathbf{READY\_FOR\_PHASE\_1C}$$
 
-All Phase 1B acceptance criteria have been satisfied and verified by 60 automated tests.
+All Phase 1B acceptance criteria and hardening requirements have been satisfied and verified by 64 automated tests.

@@ -5,7 +5,7 @@ They strictly model candidate data and do NOT represent verified canonical recor
 """
 from datetime import date, datetime, timezone
 from typing import Any, List, Optional
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, model_validator
 
 from scholarship_intelligence.domain.enums import (
     AmountPeriod,
@@ -113,6 +113,16 @@ class CandidateOpportunity(BaseModel):
     
     extraction_status: str = "EXTRACTED"
     extracted_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    @model_validator(mode="after")
+    def validate_material_evidence(self) -> "CandidateOpportunity":
+        """Enforces that a CandidateOpportunity must have at least one supporting evidence anchor."""
+        if not self.source_evidence:
+            raise ValueError(
+                f"CandidateOpportunity '{self.title}' cannot be staged without supporting source evidence. "
+                "Every material candidate fact must have at least one CandidateEvidence anchor."
+            )
+        return self
 
 
 class CandidateStagingResult(BaseModel):

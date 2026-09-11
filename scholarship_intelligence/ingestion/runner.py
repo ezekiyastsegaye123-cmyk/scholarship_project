@@ -92,6 +92,15 @@ class IngestionRunner:
         )
 
         warnings = []
+        if candidate is None:
+            warnings.append("No extractable facts with supporting evidence found; candidate staging omitted.")
+            return CandidateStagingResult(
+                fetch_result=fetch_result,
+                candidate=None,
+                evidence_items=[],
+                warnings=warnings,
+            )
+
         if not candidate.award:
             warnings.append("No explicit award or funding amount could be extracted from page content.")
         if not candidate.deadlines:

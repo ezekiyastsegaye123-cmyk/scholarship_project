@@ -27,6 +27,7 @@ DEFAULT_WRITE_TIMEOUT = 5.0
 DEFAULT_POOL_TIMEOUT = 5.0
 DEFAULT_MAX_RETRIES = 3
 DEFAULT_BACKOFF_FACTOR = 0.5
+DEFAULT_DELAY_BETWEEN_REQUESTS = 0.5
 
 
 class PoliteHttpClient:
@@ -41,7 +42,7 @@ class PoliteHttpClient:
         write_timeout: float = DEFAULT_WRITE_TIMEOUT,
         max_retries: int = DEFAULT_MAX_RETRIES,
         backoff_factor: float = DEFAULT_BACKOFF_FACTOR,
-        delay_between_requests: float = 0.0,
+        delay_between_requests: float = DEFAULT_DELAY_BETWEEN_REQUESTS,
         transport: Optional[httpx.BaseTransport] = None,
     ):
         self.user_agent = user_agent
@@ -110,104 +111,118 @@ class PoliteHttpClient:
                     follow_redirects=True,
                     max_redirects=5,
                 ) as client:
-                    response = client.get(url, headers=headers)
+                    with client.stream("GET", url, headers=headers) as response:
+                        status_code = response.status_code
 
-                    # Response-size protection: check Content-Length header if present
-                    cl_header = response.headers.get("content-length")
-                    if cl_header and cl_header.isdigit() and int(cl_header) > self.max_response_bytes:
-                        return FetchResult(
-                            url=url,
-                            status_category=FetchStatusCategory.INVALID_CONTENT,
-                            http_status=response.status_code,
-                            error_message=(
-                                f"Response Content-Length ({cl_header} bytes) exceeds "
-                                f"limit of {self.max_response_bytes} bytes."
-                            ),
-                            headers=dict(response.headers),
-                        )
+                        # Handle non-200 responses without downloading large bodies
+                        if status_code == 403:
+                            return FetchResult(
+                                url=url,
+                                status_category=FetchStatusCategory.HTTP_403,
+                                http_status=403,
+                                error_message="Access forbidden (HTTP 403 bot challenge or permission denied).",
+                                headers=dict(response.headers),
+                            )
+                        elif status_code == 404:
+                            return FetchResult(
+                                url=url,
+                                status_category=FetchStatusCategory.HTTP_404,
+                                http_status=404,
+                                error_message="Resource not found (HTTP 404 dead link).",
+                                headers=dict(response.headers),
+                            )
+                        elif status_code == 429:
+                            return FetchResult(
+                                url=url,
+                                status_category=FetchStatusCategory.HTTP_429,
+                                http_status=429,
+                                error_message="Rate limit exceeded (HTTP 429).",
+                                headers=dict(response.headers),
+                            )
+                        elif 500 <= status_code <= 599:
+                            last_error_message = f"Server error (HTTP {status_code})."
+                            if attempts <= self.max_retries:
+                                backoff = self.backoff_factor * (2 ** (attempts - 1))
+                                time.sleep(backoff)
+                                continue
+                            return FetchResult(
+                                url=url,
+                                status_category=FetchStatusCategory.HTTP_5XX,
+                                http_status=status_code,
+                                error_message=last_error_message,
+                                headers=dict(response.headers),
+                            )
+                        elif status_code != 200:
+                            return FetchResult(
+                                url=url,
+                                status_category=FetchStatusCategory.OTHER_HTTP_ERROR,
+                                http_status=status_code,
+                                error_message=f"Unexpected HTTP status {status_code}.",
+                                headers=dict(response.headers),
+                            )
 
-                    raw_bytes = response.content
-                    if len(raw_bytes) > self.max_response_bytes:
-                        return FetchResult(
-                            url=url,
-                            status_category=FetchStatusCategory.INVALID_CONTENT,
-                            http_status=response.status_code,
-                            error_message=(
-                                f"Response size ({len(raw_bytes)} bytes) exceeds "
-                                f"limit of {self.max_response_bytes} bytes."
-                            ),
-                            headers=dict(response.headers),
-                        )
+                        # For HTTP 200: Check Content-Length header first if declared
+                        cl_header = response.headers.get("content-length")
+                        if cl_header and cl_header.isdigit() and int(cl_header) > self.max_response_bytes:
+                            return FetchResult(
+                                url=url,
+                                status_category=FetchStatusCategory.INVALID_CONTENT,
+                                http_status=200,
+                                error_message=(
+                                    f"Response Content-Length ({cl_header} bytes) exceeds "
+                                    f"limit of {self.max_response_bytes} bytes."
+                                ),
+                                headers=dict(response.headers),
+                            )
 
-                    # Content-type verification
-                    content_type = response.headers.get("content-type", "")
-                    if not is_safe_content_type(content_type):
-                        return FetchResult(
-                            url=url,
-                            status_category=FetchStatusCategory.INVALID_CONTENT,
-                            http_status=response.status_code,
-                            error_message=f"Unsupported Content-Type: '{content_type}'",
-                            headers=dict(response.headers),
-                        )
+                        # Content-Type verification
+                        content_type = response.headers.get("content-type", "")
+                        if not is_safe_content_type(content_type):
+                            return FetchResult(
+                                url=url,
+                                status_category=FetchStatusCategory.INVALID_CONTENT,
+                                http_status=200,
+                                error_message=f"Unsupported Content-Type: '{content_type}'",
+                                headers=dict(response.headers),
+                            )
 
-                    status_code = response.status_code
-                    content_sha = self.compute_sha256(raw_bytes)
+                        # Stream chunks to enforce size limit strictly during download
+                        chunks = []
+                        total_bytes = 0
+                        size_exceeded = False
 
-                    # Status categorization
-                    if status_code == 200:
+                        for chunk in response.iter_bytes(chunk_size=16384):
+                            total_bytes += len(chunk)
+                            if total_bytes > self.max_response_bytes:
+                                size_exceeded = True
+                                break
+                            chunks.append(chunk)
+
+                        if size_exceeded:
+                            return FetchResult(
+                                url=url,
+                                status_category=FetchStatusCategory.INVALID_CONTENT,
+                                http_status=200,
+                                error_message=(
+                                    f"Streamed response exceeded limit of {self.max_response_bytes} bytes "
+                                    f"during download (stopped at {total_bytes} bytes)."
+                                ),
+                                headers=dict(response.headers),
+                            )
+
+                        raw_bytes = b"".join(chunks)
+                        content_sha = self.compute_sha256(raw_bytes)
+                        encoding = response.encoding or "utf-8"
+                        text_content = raw_bytes.decode(encoding, errors="replace")
+
                         return FetchResult(
                             url=url,
                             status_category=FetchStatusCategory.SUCCESS,
                             http_status=200,
-                            content=response.text,
+                            content=text_content,
                             content_sha256=content_sha,
                             headers=dict(response.headers),
                             content_bytes_length=len(raw_bytes),
-                        )
-                    elif status_code == 403:
-                        return FetchResult(
-                            url=url,
-                            status_category=FetchStatusCategory.HTTP_403,
-                            http_status=403,
-                            error_message="Access forbidden (HTTP 403 bot challenge or permission denied).",
-                            headers=dict(response.headers),
-                        )
-                    elif status_code == 404:
-                        return FetchResult(
-                            url=url,
-                            status_category=FetchStatusCategory.HTTP_404,
-                            http_status=404,
-                            error_message="Resource not found (HTTP 404 dead link).",
-                            headers=dict(response.headers),
-                        )
-                    elif status_code == 429:
-                        return FetchResult(
-                            url=url,
-                            status_category=FetchStatusCategory.HTTP_429,
-                            http_status=429,
-                            error_message="Rate limit exceeded (HTTP 429).",
-                            headers=dict(response.headers),
-                        )
-                    elif 500 <= status_code <= 599:
-                        last_error_message = f"Server error (HTTP {status_code})."
-                        if attempts <= self.max_retries:
-                            backoff = self.backoff_factor * (2 ** (attempts - 1))
-                            time.sleep(backoff)
-                            continue
-                        return FetchResult(
-                            url=url,
-                            status_category=FetchStatusCategory.HTTP_5XX,
-                            http_status=status_code,
-                            error_message=last_error_message,
-                            headers=dict(response.headers),
-                        )
-                    else:
-                        return FetchResult(
-                            url=url,
-                            status_category=FetchStatusCategory.OTHER_HTTP_ERROR,
-                            http_status=status_code,
-                            error_message=f"Unexpected HTTP status {status_code}.",
-                            headers=dict(response.headers),
                         )
 
             except httpx.TimeoutException as exc:
@@ -237,11 +252,23 @@ class PoliteHttpClient:
                     error_message=last_error_message,
                 )
 
-            except Exception as exc:
+            except (httpx.NetworkError, httpx.ProtocolError) as exc:
+                last_error_message = f"Network or protocol error: {exc}"
+                if attempts <= self.max_retries:
+                    backoff = self.backoff_factor * (2 ** (attempts - 1))
+                    time.sleep(backoff)
+                    continue
                 return FetchResult(
                     url=url,
                     status_category=FetchStatusCategory.CONNECTION_ERROR,
-                    error_message=f"Unhandled request exception: {exc}",
+                    error_message=last_error_message,
+                )
+
+            except (httpx.DecodingError, httpx.CookieConflict) as exc:
+                return FetchResult(
+                    url=url,
+                    status_category=FetchStatusCategory.INVALID_CONTENT,
+                    error_message=f"HTTP response parsing error: {exc}",
                 )
 
         return FetchResult(

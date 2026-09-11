@@ -128,3 +128,43 @@ def test_fetch_invalid_content_type():
 
     assert res.status_category == FetchStatusCategory.INVALID_CONTENT
     assert "Unsupported Content-Type" in res.error_message
+
+
+def test_fetch_streaming_chunked_size_enforcement_without_content_length():
+    """Verifies that streaming response stops immediately at size limit even if Content-Length is omitted."""
+    def streaming_handler(request: httpx.Request) -> httpx.Response:
+        def stream_generator():
+            for _ in range(20):
+                yield b"X" * 10240  # 10 KB per chunk = 200 KB total
+        return httpx.Response(
+            status_code=200,
+            content=stream_generator(),
+            headers={"Content-Type": "text/html"},  # No content-length header!
+        )
+
+    transport = httpx.MockTransport(streaming_handler)
+    # Set limit to 30 KB
+    client = PoliteHttpClient(transport=transport, max_response_bytes=30 * 1024, delay_between_requests=0.0)
+    res = client.fetch("https://university.edu/streaming-infinite-page")
+
+    assert res.status_category == FetchStatusCategory.INVALID_CONTENT
+    assert "Streamed response exceeded limit" in res.error_message
+
+
+def test_polite_http_client_default_delay_is_conservative():
+    """Verifies default PoliteHttpClient has a conservative positive delay between requests."""
+    client = PoliteHttpClient()
+    assert client.delay_between_requests >= 0.5
+
+
+def test_fetch_unexpected_exception_surfaces_instead_of_masked_connection_error():
+    """Verifies unexpected programming errors are not disguised as connection failures."""
+    def buggy_handler(request: httpx.Request) -> httpx.Response:
+        raise TypeError("Unexpected code bug inside transport hook")
+
+    transport = httpx.MockTransport(buggy_handler)
+    client = PoliteHttpClient(transport=transport, delay_between_requests=0.0)
+
+    # Must raise TypeError, NOT swallow and return FetchStatusCategory.CONNECTION_ERROR
+    with pytest.raises(TypeError, match="Unexpected code bug inside transport hook"):
+        client.fetch("https://university.edu/endpoint")

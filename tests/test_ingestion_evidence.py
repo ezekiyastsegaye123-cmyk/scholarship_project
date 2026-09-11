@@ -70,3 +70,17 @@ def test_candidate_evidence_immutability():
     )
     with pytest.raises(Exception):
         ev.evidence_text = "Modified quote"
+
+
+def test_candidate_opportunity_requires_evidence_invariant():
+    """Verifies CandidateOpportunity strictly rejects instantiation without supporting source evidence."""
+    from pydantic import ValidationError
+    from scholarship_intelligence.schemas.candidate import CandidateOpportunity
+
+    # Attempting to construct a CandidateOpportunity with empty evidence must fail
+    with pytest.raises(ValidationError, match="cannot be staged without supporting source evidence"):
+        CandidateOpportunity(
+            title="Fabricated Unanchored Scholarship",
+            description="Fabricated description without source quotes",
+            source_evidence=[],  # Prohibited!
+        )
