@@ -50,6 +50,9 @@ class OpportunitySummary(BaseModel):
     requires_act: TriState = TriState.UNKNOWN
     financial_need_required: TriState = TriState.UNKNOWN
     primary_source_url: Optional[str] = None
+    freshness_level: Optional[str] = "UNVERIFIED"
+    freshness_message: Optional[str] = None
+    last_crawled_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -71,6 +74,63 @@ class OpportunityDetail(OpportunitySummary):
     discovery_sources: List[Dict[str, Any]] = Field(default_factory=list)
     verification_records: List[Dict[str, Any]] = Field(default_factory=list)
     conflict_records: List[Dict[str, Any]] = Field(default_factory=list)
+    verification_histories: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class VerificationHistoryItem(BaseModel):
+    """Audit entry for canonical fact modifications."""
+    id: str
+    scholarship_id: str
+    field_name: str
+    old_value: Optional[str] = None
+    new_value: Optional[str] = None
+    old_evidence_url: Optional[str] = None
+    old_evidence_quote: Optional[str] = None
+    new_evidence_url: Optional[str] = None
+    new_evidence_quote: Optional[str] = None
+    decision: str
+    reason: str
+    changed_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class IngestionSourceItem(BaseModel):
+    """Registered source metadata."""
+    id: str
+    name: str
+    url: str
+    source_domain: str
+    authority_tier: str
+    is_active: bool
+    fetch_interval_hours: int
+    last_crawled_at: Optional[datetime] = None
+    last_content_sha256: Optional[str] = None
+    last_http_status: Optional[int] = None
+    failure_count: int = 0
+    description: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class IngestionRunItem(BaseModel):
+    """Execution metrics of an ingestion run."""
+    id: str
+    run_type: str
+    status: str
+    started_at: datetime
+    finished_at: Optional[datetime] = None
+    sources_attempted: int
+    sources_succeeded: int
+    sources_failed: int
+    opportunities_scanned: int
+    opportunities_updated: int
+    opportunities_created: int
+    conflicts_detected: int
+    error_log_json: Optional[str] = None
+    reference_time: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PaginatedOpportunities(BaseModel):

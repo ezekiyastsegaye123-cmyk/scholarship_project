@@ -119,7 +119,7 @@ class CandidateNormalizer:
                 if "sat is required" in lower or "requires the sat" in lower:
                     requires_sat = TriState.YES
                     all_evidence.append(self._create_evidence(snippet, fetch_result, "Standardized Testing", authority_tier))
-                elif "test-optional" in lower or "sat not required" in lower or "does not require sat" in lower:
+                elif "test-optional" in lower or "sat not required" in lower or "sat is not required" in lower or "does not require sat" in lower:
                     requires_sat = TriState.NO
                     all_evidence.append(self._create_evidence(snippet, fetch_result, "Standardized Testing", authority_tier))
 
@@ -127,7 +127,7 @@ class CandidateNormalizer:
                 if "act is required" in lower or "requires the act" in lower:
                     requires_act = TriState.YES
                     all_evidence.append(self._create_evidence(snippet, fetch_result, "Standardized Testing", authority_tier))
-                elif "test-optional" in lower or "act not required" in lower or "does not require act" in lower:
+                elif "test-optional" in lower or "act not required" in lower or "act is not required" in lower or "does not require act" in lower:
                     requires_act = TriState.NO
                     all_evidence.append(self._create_evidence(snippet, fetch_result, "Standardized Testing", authority_tier))
 

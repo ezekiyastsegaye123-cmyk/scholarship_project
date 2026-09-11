@@ -5,6 +5,7 @@ response size limits, and robust status categorization.
 """
 import hashlib
 import time
+import urllib.parse
 from typing import Optional, Dict
 import httpx
 
@@ -74,7 +75,8 @@ class PoliteHttpClient:
         url: str,
         authority_tier: AuthorityTier = AuthorityTier.THIRD_PARTY,
     ) -> FetchResult:
-        """Fetches URL with polite constraints, retries, and error categorization."""
+        """Fetches URL with polite constraints, retries, redirect security, and error categorization."""
+        start_time = time.perf_counter()
         try:
             validate_url(url)
         except IngestionSafetyError as err:
@@ -82,6 +84,7 @@ class PoliteHttpClient:
                 url=url,
                 status_category=FetchStatusCategory.INVALID_CONTENT,
                 error_message=f"Safety validation failed: {err}",
+                retrieval_duration_seconds=round(time.perf_counter() - start_time, 4),
             )
 
         headers = {
@@ -97,182 +100,256 @@ class PoliteHttpClient:
             pool=DEFAULT_POOL_TIMEOUT,
         )
 
-        attempts = 0
-        last_error_message = None
+        current_url = url
+        redirect_chain: list[str] = []
+        max_redirects = 5
 
-        while attempts <= self.max_retries:
-            self._apply_polite_delay()
-            attempts += 1
+        while True:
+            attempts = 0
+            last_error_message = None
+            redirected = False
 
-            try:
-                with httpx.Client(
-                    timeout=timeout,
-                    transport=self.transport,
-                    follow_redirects=True,
-                    max_redirects=5,
-                ) as client:
-                    with client.stream("GET", url, headers=headers) as response:
-                        status_code = response.status_code
+            while attempts <= self.max_retries:
+                self._apply_polite_delay()
+                attempts += 1
 
-                        # Handle non-200 responses without downloading large bodies
-                        if status_code == 403:
-                            return FetchResult(
-                                url=url,
-                                status_category=FetchStatusCategory.HTTP_403,
-                                http_status=403,
-                                error_message="Access forbidden (HTTP 403 bot challenge or permission denied).",
-                                headers=dict(response.headers),
-                            )
-                        elif status_code == 404:
-                            return FetchResult(
-                                url=url,
-                                status_category=FetchStatusCategory.HTTP_404,
-                                http_status=404,
-                                error_message="Resource not found (HTTP 404 dead link).",
-                                headers=dict(response.headers),
-                            )
-                        elif status_code == 429:
-                            return FetchResult(
-                                url=url,
-                                status_category=FetchStatusCategory.HTTP_429,
-                                http_status=429,
-                                error_message="Rate limit exceeded (HTTP 429).",
-                                headers=dict(response.headers),
-                            )
-                        elif 500 <= status_code <= 599:
-                            last_error_message = f"Server error (HTTP {status_code})."
-                            if attempts <= self.max_retries:
-                                backoff = self.backoff_factor * (2 ** (attempts - 1))
-                                time.sleep(backoff)
-                                continue
-                            return FetchResult(
-                                url=url,
-                                status_category=FetchStatusCategory.HTTP_5XX,
-                                http_status=status_code,
-                                error_message=last_error_message,
-                                headers=dict(response.headers),
-                            )
-                        elif status_code != 200:
-                            return FetchResult(
-                                url=url,
-                                status_category=FetchStatusCategory.OTHER_HTTP_ERROR,
-                                http_status=status_code,
-                                error_message=f"Unexpected HTTP status {status_code}.",
-                                headers=dict(response.headers),
-                            )
+                try:
+                    with httpx.Client(
+                        timeout=timeout,
+                        transport=self.transport,
+                        follow_redirects=False,
+                    ) as client:
+                        with client.stream("GET", current_url, headers=headers) as response:
+                            status_code = response.status_code
 
-                        # For HTTP 200: Check Content-Length header first if declared
-                        cl_header = response.headers.get("content-length")
-                        if cl_header and cl_header.isdigit() and int(cl_header) > self.max_response_bytes:
+                            # Handle redirects explicitly to re-validate SSRF on every hop
+                            if status_code in (301, 302, 303, 307, 308):
+                                redirect_chain.append(current_url)
+                                if len(redirect_chain) > max_redirects:
+                                    return FetchResult(
+                                        url=current_url,
+                                        status_category=FetchStatusCategory.OTHER_HTTP_ERROR,
+                                        http_status=status_code,
+                                        error_message=f"Exceeded maximum redirect limit ({max_redirects}).",
+                                        redirect_chain=redirect_chain,
+                                        retrieval_duration_seconds=round(time.perf_counter() - start_time, 4),
+                                    )
+                                location = response.headers.get("location")
+                                if not location:
+                                    return FetchResult(
+                                        url=current_url,
+                                        status_category=FetchStatusCategory.INVALID_CONTENT,
+                                        http_status=status_code,
+                                        error_message="Redirect response missing Location header.",
+                                        redirect_chain=redirect_chain,
+                                        retrieval_duration_seconds=round(time.perf_counter() - start_time, 4),
+                                    )
+                                next_url = urllib.parse.urljoin(current_url, location)
+                                try:
+                                    validate_url(next_url)
+                                except IngestionSafetyError as err:
+                                    return FetchResult(
+                                        url=current_url,
+                                        status_category=FetchStatusCategory.INVALID_CONTENT,
+                                        http_status=status_code,
+                                        error_message=f"SSRF blocked on redirect: {err}",
+                                        redirect_chain=redirect_chain,
+                                        retrieval_duration_seconds=round(time.perf_counter() - start_time, 4),
+                                    )
+                                current_url = next_url
+                                redirected = True
+                                break  # Break inner retry loop to execute next redirect hop
+
+                            # Handle non-200 responses without downloading large bodies
+                            if status_code == 403:
+                                return FetchResult(
+                                    url=current_url,
+                                    status_category=FetchStatusCategory.HTTP_403,
+                                    http_status=403,
+                                    error_message="Access forbidden (HTTP 403 bot challenge or permission denied).",
+                                    headers=dict(response.headers),
+                                    redirect_chain=redirect_chain,
+                                    retrieval_duration_seconds=round(time.perf_counter() - start_time, 4),
+                                )
+                            elif status_code == 404:
+                                return FetchResult(
+                                    url=current_url,
+                                    status_category=FetchStatusCategory.HTTP_404,
+                                    http_status=404,
+                                    error_message="Resource not found (HTTP 404 dead link).",
+                                    headers=dict(response.headers),
+                                    redirect_chain=redirect_chain,
+                                    retrieval_duration_seconds=round(time.perf_counter() - start_time, 4),
+                                )
+                            elif status_code == 429:
+                                return FetchResult(
+                                    url=current_url,
+                                    status_category=FetchStatusCategory.HTTP_429,
+                                    http_status=429,
+                                    error_message="Rate limit exceeded (HTTP 429).",
+                                    headers=dict(response.headers),
+                                    redirect_chain=redirect_chain,
+                                    retrieval_duration_seconds=round(time.perf_counter() - start_time, 4),
+                                )
+                            elif 500 <= status_code <= 599:
+                                last_error_message = f"Server error (HTTP {status_code})."
+                                if attempts <= self.max_retries:
+                                    backoff = self.backoff_factor * (2 ** (attempts - 1))
+                                    time.sleep(backoff)
+                                    continue
+                                return FetchResult(
+                                    url=current_url,
+                                    status_category=FetchStatusCategory.HTTP_5XX,
+                                    http_status=status_code,
+                                    error_message=last_error_message,
+                                    headers=dict(response.headers),
+                                    redirect_chain=redirect_chain,
+                                    retrieval_duration_seconds=round(time.perf_counter() - start_time, 4),
+                                )
+                            elif status_code != 200:
+                                return FetchResult(
+                                    url=current_url,
+                                    status_category=FetchStatusCategory.OTHER_HTTP_ERROR,
+                                    http_status=status_code,
+                                    error_message=f"Unexpected HTTP status {status_code}.",
+                                    headers=dict(response.headers),
+                                    redirect_chain=redirect_chain,
+                                    retrieval_duration_seconds=round(time.perf_counter() - start_time, 4),
+                                )
+
+                            # For HTTP 200: Check Content-Length header first if declared
+                            cl_header = response.headers.get("content-length")
+                            if cl_header and cl_header.isdigit() and int(cl_header) > self.max_response_bytes:
+                                return FetchResult(
+                                    url=current_url,
+                                    status_category=FetchStatusCategory.INVALID_CONTENT,
+                                    http_status=200,
+                                    error_message=(
+                                        f"Response Content-Length ({cl_header} bytes) exceeds "
+                                        f"limit of {self.max_response_bytes} bytes."
+                                    ),
+                                    headers=dict(response.headers),
+                                    redirect_chain=redirect_chain,
+                                    retrieval_duration_seconds=round(time.perf_counter() - start_time, 4),
+                                )
+
+                            # Content-Type verification
+                            content_type = response.headers.get("content-type", "")
+                            if not is_safe_content_type(content_type):
+                                return FetchResult(
+                                    url=current_url,
+                                    status_category=FetchStatusCategory.INVALID_CONTENT,
+                                    http_status=200,
+                                    error_message=f"Unsupported Content-Type: '{content_type}'",
+                                    headers=dict(response.headers),
+                                    redirect_chain=redirect_chain,
+                                    retrieval_duration_seconds=round(time.perf_counter() - start_time, 4),
+                                )
+
+                            # Stream chunks to enforce size limit strictly during download
+                            chunks = []
+                            total_bytes = 0
+                            size_exceeded = False
+
+                            for chunk in response.iter_bytes(chunk_size=16384):
+                                total_bytes += len(chunk)
+                                if total_bytes > self.max_response_bytes:
+                                    size_exceeded = True
+                                    break
+                                chunks.append(chunk)
+
+                            if size_exceeded:
+                                return FetchResult(
+                                    url=current_url,
+                                    status_category=FetchStatusCategory.INVALID_CONTENT,
+                                    http_status=200,
+                                    error_message=(
+                                        f"Streamed response exceeded limit of {self.max_response_bytes} bytes "
+                                        f"during download (stopped at {total_bytes} bytes)."
+                                    ),
+                                    headers=dict(response.headers),
+                                    redirect_chain=redirect_chain,
+                                    retrieval_duration_seconds=round(time.perf_counter() - start_time, 4),
+                                )
+
+                            raw_bytes = b"".join(chunks)
+                            content_sha = self.compute_sha256(raw_bytes)
+                            encoding = response.encoding or "utf-8"
+                            text_content = raw_bytes.decode(encoding, errors="replace")
+
                             return FetchResult(
-                                url=url,
-                                status_category=FetchStatusCategory.INVALID_CONTENT,
+                                url=current_url,
+                                status_category=FetchStatusCategory.SUCCESS,
                                 http_status=200,
-                                error_message=(
-                                    f"Response Content-Length ({cl_header} bytes) exceeds "
-                                    f"limit of {self.max_response_bytes} bytes."
-                                ),
+                                content=text_content,
+                                content_sha256=content_sha,
                                 headers=dict(response.headers),
+                                content_bytes_length=len(raw_bytes),
+                                redirect_chain=redirect_chain,
+                                retrieval_duration_seconds=round(time.perf_counter() - start_time, 4),
                             )
 
-                        # Content-Type verification
-                        content_type = response.headers.get("content-type", "")
-                        if not is_safe_content_type(content_type):
-                            return FetchResult(
-                                url=url,
-                                status_category=FetchStatusCategory.INVALID_CONTENT,
-                                http_status=200,
-                                error_message=f"Unsupported Content-Type: '{content_type}'",
-                                headers=dict(response.headers),
-                            )
+                except httpx.TimeoutException as exc:
+                    last_error_message = f"Request timed out: {exc}"
+                    if attempts <= self.max_retries:
+                        backoff = self.backoff_factor * (2 ** (attempts - 1))
+                        time.sleep(backoff)
+                        continue
+                    return FetchResult(
+                        url=current_url,
+                        status_category=FetchStatusCategory.TIMEOUT,
+                        error_message=last_error_message,
+                        redirect_chain=redirect_chain,
+                        retrieval_duration_seconds=round(time.perf_counter() - start_time, 4),
+                    )
 
-                        # Stream chunks to enforce size limit strictly during download
-                        chunks = []
-                        total_bytes = 0
-                        size_exceeded = False
+                except httpx.ConnectError as exc:
+                    exc_str = str(exc).lower()
+                    last_error_message = f"Connection failed: {exc}"
+                    is_dns = "name or service not known" in exc_str or "getaddrinfo failed" in exc_str
+                    if attempts <= self.max_retries and not is_dns:
+                        backoff = self.backoff_factor * (2 ** (attempts - 1))
+                        time.sleep(backoff)
+                        continue
+                    category = FetchStatusCategory.DNS_ERROR if is_dns else FetchStatusCategory.CONNECTION_ERROR
+                    return FetchResult(
+                        url=current_url,
+                        status_category=category,
+                        error_message=last_error_message,
+                        redirect_chain=redirect_chain,
+                        retrieval_duration_seconds=round(time.perf_counter() - start_time, 4),
+                    )
 
-                        for chunk in response.iter_bytes(chunk_size=16384):
-                            total_bytes += len(chunk)
-                            if total_bytes > self.max_response_bytes:
-                                size_exceeded = True
-                                break
-                            chunks.append(chunk)
+                except (httpx.NetworkError, httpx.ProtocolError) as exc:
+                    last_error_message = f"Network or protocol error: {exc}"
+                    if attempts <= self.max_retries:
+                        backoff = self.backoff_factor * (2 ** (attempts - 1))
+                        time.sleep(backoff)
+                        continue
+                    return FetchResult(
+                        url=current_url,
+                        status_category=FetchStatusCategory.CONNECTION_ERROR,
+                        error_message=last_error_message,
+                        redirect_chain=redirect_chain,
+                        retrieval_duration_seconds=round(time.perf_counter() - start_time, 4),
+                    )
 
-                        if size_exceeded:
-                            return FetchResult(
-                                url=url,
-                                status_category=FetchStatusCategory.INVALID_CONTENT,
-                                http_status=200,
-                                error_message=(
-                                    f"Streamed response exceeded limit of {self.max_response_bytes} bytes "
-                                    f"during download (stopped at {total_bytes} bytes)."
-                                ),
-                                headers=dict(response.headers),
-                            )
+                except (httpx.DecodingError, httpx.CookieConflict) as exc:
+                    return FetchResult(
+                        url=current_url,
+                        status_category=FetchStatusCategory.INVALID_CONTENT,
+                        error_message=f"HTTP response parsing error: {exc}",
+                        redirect_chain=redirect_chain,
+                        retrieval_duration_seconds=round(time.perf_counter() - start_time, 4),
+                    )
 
-                        raw_bytes = b"".join(chunks)
-                        content_sha = self.compute_sha256(raw_bytes)
-                        encoding = response.encoding or "utf-8"
-                        text_content = raw_bytes.decode(encoding, errors="replace")
+            if redirected:
+                continue
 
-                        return FetchResult(
-                            url=url,
-                            status_category=FetchStatusCategory.SUCCESS,
-                            http_status=200,
-                            content=text_content,
-                            content_sha256=content_sha,
-                            headers=dict(response.headers),
-                            content_bytes_length=len(raw_bytes),
-                        )
-
-            except httpx.TimeoutException as exc:
-                last_error_message = f"Request timed out: {exc}"
-                if attempts <= self.max_retries:
-                    backoff = self.backoff_factor * (2 ** (attempts - 1))
-                    time.sleep(backoff)
-                    continue
-                return FetchResult(
-                    url=url,
-                    status_category=FetchStatusCategory.TIMEOUT,
-                    error_message=last_error_message,
-                )
-
-            except httpx.ConnectError as exc:
-                exc_str = str(exc).lower()
-                last_error_message = f"Connection failed: {exc}"
-                is_dns = "name or service not known" in exc_str or "getaddrinfo failed" in exc_str
-                if attempts <= self.max_retries and not is_dns:
-                    backoff = self.backoff_factor * (2 ** (attempts - 1))
-                    time.sleep(backoff)
-                    continue
-                category = FetchStatusCategory.DNS_ERROR if is_dns else FetchStatusCategory.CONNECTION_ERROR
-                return FetchResult(
-                    url=url,
-                    status_category=category,
-                    error_message=last_error_message,
-                )
-
-            except (httpx.NetworkError, httpx.ProtocolError) as exc:
-                last_error_message = f"Network or protocol error: {exc}"
-                if attempts <= self.max_retries:
-                    backoff = self.backoff_factor * (2 ** (attempts - 1))
-                    time.sleep(backoff)
-                    continue
-                return FetchResult(
-                    url=url,
-                    status_category=FetchStatusCategory.CONNECTION_ERROR,
-                    error_message=last_error_message,
-                )
-
-            except (httpx.DecodingError, httpx.CookieConflict) as exc:
-                return FetchResult(
-                    url=url,
-                    status_category=FetchStatusCategory.INVALID_CONTENT,
-                    error_message=f"HTTP response parsing error: {exc}",
-                )
-
-        return FetchResult(
-            url=url,
-            status_category=FetchStatusCategory.TIMEOUT,
-            error_message=last_error_message or "Maximum retries exhausted.",
-        )
+            return FetchResult(
+                url=current_url,
+                status_category=FetchStatusCategory.TIMEOUT,
+                error_message=last_error_message or "Maximum retries exhausted.",
+                redirect_chain=redirect_chain,
+                retrieval_duration_seconds=round(time.perf_counter() - start_time, 4),
+            )

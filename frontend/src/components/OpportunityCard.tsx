@@ -1,6 +1,6 @@
 import React from 'react';
 import type { OpportunitySummary } from '../types';
-import { VerificationBadge, FundingBadge, TriStateBadge } from './StatusBadges';
+import { VerificationBadge, FundingBadge, TriStateBadge, FreshnessBadge } from './StatusBadges';
 import { Calendar, Globe, Building2, GraduationCap, ArrowRight, CheckSquare, Square } from 'lucide-react';
 
 interface OpportunityCardProps {
@@ -33,7 +33,10 @@ export const OpportunityCard: React.FC<OpportunityCardProps> = ({
     <article className="opp-card" data-testid={`opp-card-${opportunity.id}`}>
       <div className="opp-card-header">
         <div className="opp-meta-row">
-          <VerificationBadge state={opportunity.verification_status} />
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <VerificationBadge state={opportunity.verification_status} />
+            <FreshnessBadge level={opportunity.freshness_level} message={opportunity.freshness_message} />
+          </div>
           <button
             type="button"
             className={`compare-toggle-btn ${isCompared ? 'compared-active' : ''}`}

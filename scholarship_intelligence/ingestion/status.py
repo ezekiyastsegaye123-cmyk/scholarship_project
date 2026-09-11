@@ -30,3 +30,5 @@ class FetchResult(BaseModel):
     headers: Dict[str, str] = Field(default_factory=dict)
     error_message: Optional[str] = None
     content_bytes_length: int = 0
+    redirect_chain: list[str] = Field(default_factory=list)
+    retrieval_duration_seconds: float = 0.0

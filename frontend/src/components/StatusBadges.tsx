@@ -153,3 +153,33 @@ export const TriStateBadge: React.FC<{ value: TriState; label: string }> = ({ va
     </span>
   );
 };
+
+export const FreshnessBadge: React.FC<{ level?: string; message?: string }> = ({ level, message }) => {
+  switch (level) {
+    case 'FRESH':
+      return (
+        <span className="badge text-xs bg-emerald-100 text-emerald-800 border border-emerald-300" title={message || 'Verified recently (<= 30 days)'}>
+          <CheckCircle2 className="w-3 h-3 mr-1 inline" /> Fresh
+        </span>
+      );
+    case 'MODERATE':
+      return (
+        <span className="badge text-xs bg-amber-100 text-amber-800 border border-amber-300" title={message || 'Verified within 31-90 days'}>
+          <Clock className="w-3 h-3 mr-1 inline" /> Moderate
+        </span>
+      );
+    case 'STALE':
+      return (
+        <span className="badge text-xs bg-rose-100 text-rose-800 border border-rose-300" title={message || 'Verified >90 days ago'}>
+          <AlertTriangle className="w-3 h-3 mr-1 inline" /> Stale
+        </span>
+      );
+    case 'UNVERIFIED':
+    default:
+      return (
+        <span className="badge text-xs bg-gray-100 text-gray-700 border border-gray-300" title={message || 'Unverified'}>
+          <HelpCircle className="w-3 h-3 mr-1 inline" /> Unverified
+        </span>
+      );
+  }
+};

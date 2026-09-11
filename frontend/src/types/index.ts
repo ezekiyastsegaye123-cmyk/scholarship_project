@@ -38,6 +38,8 @@ export type EligibilityStatus =
   | 'NEEDS_REVIEW'
   | 'OUTDATED_CYCLE';
 
+export type FreshnessLevel = 'FRESH' | 'MODERATE' | 'STALE' | 'UNVERIFIED';
+
 export interface OpportunitySummary {
   id: string;
   title: string;
@@ -57,6 +59,9 @@ export interface OpportunitySummary {
   requires_act: TriState;
   financial_need_required: TriState;
   primary_source_url: string | null;
+  freshness_level?: FreshnessLevel;
+  freshness_message?: string;
+  last_crawled_at?: string | null;
 }
 
 export interface PaginatedOpportunities {
@@ -180,6 +185,21 @@ export interface ConflictRecord {
   recorded_at: string | null;
 }
 
+export interface VerificationHistoryRecord {
+  id: string;
+  scholarship_id: string;
+  field_name: string;
+  old_value: string | null;
+  new_value: string | null;
+  old_evidence_url: string | null;
+  old_evidence_quote: string | null;
+  new_evidence_url: string | null;
+  new_evidence_quote: string | null;
+  decision: string;
+  reason: string;
+  changed_at: string;
+}
+
 export interface OpportunityDetail extends OpportunitySummary {
   description: string | null;
   varies_by_program: boolean;
@@ -194,6 +214,7 @@ export interface OpportunityDetail extends OpportunitySummary {
   discovery_sources: DiscoverySourceRecord[];
   verification_records: VerificationRecord[];
   conflict_records: ConflictRecord[];
+  verification_histories?: VerificationHistoryRecord[];
 }
 
 export interface StudentProfile {

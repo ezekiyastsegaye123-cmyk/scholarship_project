@@ -4,7 +4,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from scholarship_intelligence.api.schemas import OpportunityDetail, PaginatedOpportunities
+from scholarship_intelligence.api.schemas import OpportunityDetail, PaginatedOpportunities, VerificationHistoryItem
 from scholarship_intelligence.api.service import ApiService
 from scholarship_intelligence.db.session import get_db_session
 
@@ -49,6 +49,15 @@ def list_opportunities(
         order_by=order_by,
         reference_date=reference_date,
     )
+
+
+@router.get("/{opportunity_id}/verification-history", response_model=list[VerificationHistoryItem])
+def get_verification_history(
+    opportunity_id: str,
+    db: Session = Depends(get_db),
+):
+    """Retrieve complete audit trail of fact modifications and re-verifications for an opportunity."""
+    return service.get_verification_history(session=db, opportunity_id=opportunity_id)
 
 
 @router.get("/{opportunity_id}", response_model=OpportunityDetail)

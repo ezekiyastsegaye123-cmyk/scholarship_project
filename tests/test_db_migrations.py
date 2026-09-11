@@ -41,6 +41,8 @@ def test_clean_alembic_migration():
             "verification_records",
             "conflict_records",
             "student_profiles",
+            "ingestion_sources",
+            "ingestion_runs",
         }
         assert expected_tables.issubset(table_names), f"Missing tables: {expected_tables - table_names}"
         engine.dispose()

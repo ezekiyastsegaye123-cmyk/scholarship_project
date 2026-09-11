@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from scholarship_intelligence.api.routes import counselor, opportunities, student_profile
+from scholarship_intelligence.api.routes import counselor, ingestion, opportunities, student_profile
 
 app = FastAPI(
     title="Scholarship Intelligence & Counselor API",
@@ -28,6 +28,7 @@ api_prefix = "/api"
 app.include_router(opportunities.router, prefix=api_prefix)
 app.include_router(student_profile.router, prefix=api_prefix)
 app.include_router(counselor.router, prefix=api_prefix)
+app.include_router(ingestion.router, prefix=api_prefix)
 
 
 @app.get("/health")

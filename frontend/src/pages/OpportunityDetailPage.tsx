@@ -11,6 +11,7 @@ import {
   FundingBadge,
   EligibilityBadge,
   TriStateBadge,
+  FreshnessBadge,
 } from '../components/StatusBadges';
 import {
   ArrowLeft,
@@ -170,6 +171,7 @@ export const OpportunityDetailPage: React.FC<OpportunityDetailPageProps> = ({
       <section className="detail-header-card">
         <div className="detail-meta-badges">
           <VerificationBadge state={opp.verification_status} />
+          <FreshnessBadge level={opp.freshness_level} message={opp.freshness_message} />
           <FundingBadge classification={opp.funding_classification} />
           <span className="badge badge-neutral">Cycle: {opp.academic_cycle}</span>
         </div>
@@ -847,6 +849,48 @@ export const OpportunityDetailPage: React.FC<OpportunityDetailPageProps> = ({
                         "{vr.evidence_quote}"
                       </blockquote>
                       {vr.notes && <p className="text-xs text-gray-600 mt-1 italic">{vr.notes}</p>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {opp.verification_histories && opp.verification_histories.length > 0 && (
+              <div className="pane-section">
+                <h3 className="section-title">Fact Change History & Re-verification Ledger</h3>
+                <p className="text-xs text-gray-500 mb-3">
+                  Immutable audit ledger recording every fact modification, source evidence quote, and promotion decision.
+                </p>
+                <div className="space-y-3">
+                  {opp.verification_histories.map((vh) => (
+                    <div key={vh.id} className="verif-record-card">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-semibold text-gray-800">
+                          Field: <span className="font-mono text-brand font-bold">{vh.field_name}</span> &mdash; <span className="badge badge-brand text-xs">{vh.decision}</span>
+                        </span>
+                        <span className="text-gray-500 font-mono">
+                          {vh.changed_at ? new Date(vh.changed_at).toLocaleString() : ''}
+                        </span>
+                      </div>
+                      <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2 text-xs bg-gray-50 p-2 rounded border border-gray-100">
+                        <div>
+                          <span className="text-gray-500 font-semibold block">Previous Value:</span>
+                          <span className="font-mono text-gray-700">{vh.old_value || '<none>'}</span>
+                          {vh.old_evidence_quote && (
+                            <blockquote className="quote-snippet mt-1 italic text-xs">"{vh.old_evidence_quote}"</blockquote>
+                          )}
+                        </div>
+                        <div>
+                          <span className="text-gray-500 font-semibold block">New Verified Value:</span>
+                          <span className="font-mono text-emerald-700 font-bold">{vh.new_value || '<none>'}</span>
+                          {vh.new_evidence_quote && (
+                            <blockquote className="quote-snippet mt-1 italic text-xs text-emerald-900">"{vh.new_evidence_quote}"</blockquote>
+                          )}
+                        </div>
+                      </div>
+                      <p className="text-xs text-gray-600 mt-2">
+                        <strong>Decision Reason:</strong> {vh.reason}
+                      </p>
                     </div>
                   ))}
                 </div>

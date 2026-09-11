@@ -13,6 +13,8 @@ from scholarship_intelligence.models.opportunity import ScholarshipOpportunity
 from scholarship_intelligence.models.student_profile import StudentProfile
 from scholarship_intelligence.models.verification_history import VerificationHistory
 from scholarship_intelligence.models.source_liveness import SourceLivenessLog
+from scholarship_intelligence.models.ingestion_source import IngestionSource
+from scholarship_intelligence.models.ingestion_run import IngestionRun
 
 __all__ = [
     "Base",
@@ -34,5 +36,7 @@ __all__ = [
     "StudentProfile",
     "VerificationHistory",
     "SourceLivenessLog",
+    "IngestionSource",
+    "IngestionRun",
 ]
 

@@ -8,10 +8,13 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 from scholarship_intelligence.api.schemas import (
     ComparisonItem,
     ComparisonResponse,
+    IngestionRunItem,
+    IngestionSourceItem,
     OpportunityDetail,
     OpportunitySummary,
     PaginatedOpportunities,
     StudentProfileInput,
+    VerificationHistoryItem,
 )
 from scholarship_intelligence.counselor.service import ScholarshipCounselorService
 from scholarship_intelligence.domain.enums import (
@@ -21,10 +24,14 @@ from scholarship_intelligence.domain.enums import (
     VerificationState,
 )
 from scholarship_intelligence.evaluator.engine import EligibilityEvaluator
+from scholarship_intelligence.ingestion.freshness import FreshnessClassifier
 from scholarship_intelligence.models.deadline import Deadline
+from scholarship_intelligence.models.ingestion_run import IngestionRun
+from scholarship_intelligence.models.ingestion_source import IngestionSource
 from scholarship_intelligence.models.opportunity import ScholarshipOpportunity
 from scholarship_intelligence.models.provider import Provider
 from scholarship_intelligence.models.university import University
+from scholarship_intelligence.models.verification_history import VerificationHistory
 from scholarship_intelligence.schemas.counselor import CounselorAssessmentResult
 from scholarship_intelligence.schemas.eligibility_eval import EligibilityEvaluationResult
 
@@ -119,6 +126,13 @@ class ApiService:
         raw_v_status = getattr(opp, "verification_status", VerificationState.UNVERIFIED.value)
         v_status = VerificationState(raw_v_status) if isinstance(raw_v_status, str) else raw_v_status
 
+        ref_dt = (
+            datetime.combine(reference_date, datetime.min.time()).replace(tzinfo=timezone.utc)
+            if reference_date
+            else datetime(2026, 11, 1, tzinfo=timezone.utc)
+        )
+        freshness = FreshnessClassifier.classify(opp, reference_time=ref_dt)
+
         return OpportunitySummary(
             id=str(opp.id),
             title=opp.title,
@@ -143,6 +157,9 @@ class ApiService:
             if isinstance(opp.financial_need_required, str)
             else opp.financial_need_required,
             primary_source_url=primary_url,
+            freshness_level=freshness.level.value,
+            freshness_message=freshness.message,
+            last_crawled_at=freshness.last_crawled_at,
         )
 
     def list_opportunities(
@@ -266,6 +283,7 @@ class ApiService:
                 selectinload(ScholarshipOpportunity.discovery_sources),
                 selectinload(ScholarshipOpportunity.verification_records),
                 selectinload(ScholarshipOpportunity.conflict_records),
+                selectinload(ScholarshipOpportunity.verification_histories),
             )
             .filter(ScholarshipOpportunity.id == opportunity_id)
             .first()
@@ -423,6 +441,28 @@ class ApiService:
             for cr in (opp.conflict_records or [])
         ]
 
+        history_list = [
+            {
+                "id": str(vh.id),
+                "scholarship_id": str(vh.scholarship_id),
+                "field_name": vh.field_name,
+                "old_value": vh.old_value,
+                "new_value": vh.new_value,
+                "old_evidence_url": vh.old_evidence_url,
+                "old_evidence_quote": vh.old_evidence_quote,
+                "new_evidence_url": vh.new_evidence_url,
+                "new_evidence_quote": vh.new_evidence_quote,
+                "decision": vh.decision,
+                "reason": vh.reason,
+                "changed_at": vh.changed_at.isoformat() if vh.changed_at else None,
+            }
+            for vh in sorted(
+                opp.verification_histories or [],
+                key=lambda h: h.changed_at or datetime.min.replace(tzinfo=timezone.utc),
+                reverse=True,
+            )
+        ]
+
         return OpportunityDetail(
             **summary.model_dump(),
             description=opp.description,
@@ -440,6 +480,7 @@ class ApiService:
             discovery_sources=discovery_list,
             verification_records=verif_records_list,
             conflict_records=conflicts_list,
+            verification_histories=history_list,
         )
 
     def evaluate_opportunity(
@@ -607,3 +648,73 @@ class ApiService:
             ordering_rule="Preserves user selection order; zero composite match score or arbitrary ranking algorithm",
             total_compared=len(items),
         )
+
+    def get_verification_history(self, session: Session, opportunity_id: str) -> List[VerificationHistoryItem]:
+        """Fetches complete audit trail of fact modifications for an opportunity."""
+        histories = (
+            session.query(VerificationHistory)
+            .filter(VerificationHistory.scholarship_id == opportunity_id)
+            .order_by(VerificationHistory.changed_at.desc())
+            .all()
+        )
+        return [
+            VerificationHistoryItem(
+                id=str(h.id),
+                scholarship_id=str(h.scholarship_id),
+                field_name=h.field_name,
+                old_value=h.old_value,
+                new_value=h.new_value,
+                old_evidence_url=h.old_evidence_url,
+                old_evidence_quote=h.old_evidence_quote,
+                new_evidence_url=h.new_evidence_url,
+                new_evidence_quote=h.new_evidence_quote,
+                decision=h.decision,
+                reason=h.reason,
+                changed_at=h.changed_at,
+            )
+            for h in histories
+        ]
+
+    def list_ingestion_runs(self, session: Session, limit: int = 50) -> List[IngestionRunItem]:
+        """Retrieves past ingestion execution runs with status and metrics."""
+        runs = session.query(IngestionRun).order_by(IngestionRun.started_at.desc()).limit(limit).all()
+        return [
+            IngestionRunItem(
+                id=str(r.id),
+                run_type=r.run_type,
+                status=r.status,
+                started_at=r.started_at,
+                finished_at=r.finished_at,
+                sources_attempted=r.sources_attempted,
+                sources_succeeded=r.sources_succeeded,
+                sources_failed=r.sources_failed,
+                opportunities_scanned=r.opportunities_scanned,
+                opportunities_updated=r.opportunities_updated,
+                opportunities_created=r.opportunities_created,
+                conflicts_detected=r.conflicts_detected,
+                error_log_json=r.error_log_json,
+                reference_time=r.reference_time,
+            )
+            for r in runs
+        ]
+
+    def list_ingestion_sources(self, session: Session) -> List[IngestionSourceItem]:
+        """Retrieves all registered ingestion sources and their crawl statuses."""
+        sources = session.query(IngestionSource).order_by(IngestionSource.name.asc()).all()
+        return [
+            IngestionSourceItem(
+                id=str(s.id),
+                name=s.name,
+                url=s.url,
+                source_domain=s.source_domain,
+                authority_tier=s.authority_tier,
+                is_active=s.is_active,
+                fetch_interval_hours=s.fetch_interval_hours,
+                last_crawled_at=s.last_crawled_at,
+                last_content_sha256=s.last_content_sha256,
+                last_http_status=s.last_http_status,
+                failure_count=s.failure_count,
+                description=s.description,
+            )
+            for s in sources
+        ]
