@@ -39,6 +39,7 @@ def test_golden_case_a_strong_alignment(service):
         "gpa_scale": 4.0,
         "sat_score": 1500,
         "intended_major": "Computer Science",
+        "prepared_materials": ["Essay"],
     }
     opp = MagicMock(
         id="opp-1",
@@ -63,6 +64,8 @@ def test_golden_case_a_strong_alignment(service):
             funding_components=[
                 MagicMock(component_type=FundingComponentType.TUITION.value, source_evidence_snippet="Tuition"),
                 MagicMock(component_type=FundingComponentType.ROOM.value, source_evidence_snippet="Housing"),
+                MagicMock(component_type=FundingComponentType.MEALS.value, source_evidence_snippet="Meal plan"),
+                MagicMock(component_type=FundingComponentType.LIVING_EXPENSES.value, source_evidence_snippet="Monthly stipend"),
             ],
         ),
     )

@@ -24,9 +24,11 @@ The module answers five foundational student questions without ever resorting to
 - **Zero Numerical Scoring:** No `match_score`, `fit_score`, `competitiveness_score`, `readiness_score`, `confidence_score`, or `trust_score`.
 - **Zero Probability Predictions:** No acceptance chances (e.g. "80% chance of winning") or top-X rankings.
 - **Zero LLM / Vector Dependencies:** Pure deterministic Python logic using domain models and Pydantic schemas.
-- **Full Tuition $\ne$ Full Funding:** If room, board, and living expenses are not verified as covered, the system explicitly prohibits calling an award "fully funded" and issues a mandatory budget notice.
-- **Preservation of `UNKNOWN`:** Missing student facts or unconfirmed provider criteria are never treated as negative disqualifications or assumed positive values.
-- **Source Traceability:** Every factual finding cites source authority and verbatim evidence snippets.
+- **No Invented Academic or Testing Standards:** No arbitrary GPA cutoffs (3.5, 3.8, or +0.2 point margins) and no universal SAT 1400 / ACT 30 thresholds. Assessments strictly evaluate against verified provider requirements.
+- **Epistemic Integrity (`UNKNOWN \ne NO`):** Missing student facts or unextracted provider criteria remain `UNKNOWN`. Absence of an explicit rule is never assumed to mean "open to all."
+- **Substantiated Full Funding Invariant:** Awards labeled `FULL_FUNDING` are downgraded to `FULL_TUITION` unless verified funding components substantiate both tuition and comprehensive living support (room + meals or living stipend).
+- **Truthful Application Readiness:** Checks actual student document preparation state (`prepared_materials`); if preparation status is unrecorded, readiness is reported as `UNKNOWN` rather than assuming documents are missing.
+- **Source Traceability & Genuine Evidence:** Every factual finding cites source authority with verbatim evidence snippets; zero generic placeholder quotes.
 
 ---
 
@@ -36,19 +38,19 @@ The counselor sits downstream of Phase 1D Eligibility Evaluation and Phase 1C Ve
 
 ```mermaid
 flowchart TD
-    SP["Student Profile<br/>(GPA, Country, Major, Tests)"] --> CS["ScholarshipCounselorService"]
+    SP["Student Profile<br/>(GPA, Country, Major, Tests, Prepared Materials)"] --> CS["ScholarshipCounselorService"]
     OP["Scholarship Opportunity<br/>(Award, Deadlines, Reqs, Sources)"] --> CS
     EE["Phase 1D Result<br/>(EligibilityEvaluationResult)"] --> CS
     VS["Phase 1C Verification State<br/>(VERIFIED, PARTIALLY_VERIFIED)"] --> CS
 
     subgraph "Deterministic Rule Evaluators"
-        CS --> AR["assess_academic_alignment()"]
-        CS --> GR["assess_geographic_alignment()"]
-        CS --> PR["assess_program_alignment()"]
-        CS --> TR["assess_testing_readiness()"]
-        CS --> FR["assess_funding()<br/>(Full Tuition != Full Funding)"]
-        CS --> DR["assess_deadlines()<br/>(14-Day Threshold)"]
-        CS --> AP["assess_application_readiness()"]
+        CS --> AR["assess_academic_alignment()<br/>(Zero Arbitrary Cutoffs)"]
+        CS --> GR["assess_geographic_alignment()<br/>(Open vs Unknown Preserved)"]
+        CS --> PR["assess_program_alignment()<br/>(Open vs Unknown Preserved)"]
+        CS --> TR["assess_testing_readiness()<br/>(Provider Rule vs UNKNOWN)"]
+        CS --> FR["assess_funding()<br/>(Substantiated Full Funding Invariant)"]
+        CS --> DR["assess_deadlines()<br/>(Explicit reference_date Determinism)"]
+        CS --> AP["assess_application_readiness()<br/>(Truthful Preparation Check)"]
         CS --> VR["assess_verification_warning()"]
     end
 
@@ -75,58 +77,55 @@ flowchart TD
 
 ---
 
-## 3. The Seven Assessment Dimensions
+## 3. The Seven Assessment Dimensions (Epistemic Calibration)
 
 ### 1. Academic Alignment
-Evaluates GPA context against minimum thresholds and academic rigor indicators:
-- `STRONG`: Student GPA $\ge$ published requirement by $\ge 0.2$ grade points (on a 4.0 scale), or $\ge 3.8$ when no explicit minimum is published.
-- `MODERATE`: Student GPA meets or slightly exceeds minimum threshold ($0.0 \le \Delta < 0.2$).
-- `LIMITED`: Student GPA is below published minimum criterion.
-- `UNKNOWN`: Student GPA or grade scale is unrecorded.
-- `NOT_ASSESSABLE`: Opportunity has no academic GPA criteria.
+Evaluates student GPA strictly against verified provider criteria without arbitrary thresholds:
+- `STRONG`: Student GPA meets or exceeds the published minimum requirement.
+- `LIMITED`: Student GPA is below the published minimum requirement.
+- `UNKNOWN`: Student GPA is unprovided, or grading scale cannot be normalized against published requirements.
+- `NOT_ASSESSABLE`: Opportunity publishes no minimum GPA requirement. The system explains: *"The opportunity does not publish a minimum GPA requirement, so the system cannot determine academic alignment from GPA alone."* (No invented 3.5, 3.8, or +0.2 rules).
 
 ### 2. Geographic Alignment
-Evaluates citizenship, nationality, and residency criteria:
-- `STRONG`: Student citizenship/residence is explicitly verified in targeted geographic categories.
-- `MODERATE`: Student meets general international eligibility, but is not in a specifically targeted priority country.
-- `LIMITED`: Student citizenship is excluded or outside permitted countries.
-- `UNKNOWN`: Student country of citizenship or residence is unprovided.
-- `NOT_ASSESSABLE`: Opportunity is open globally with zero geographic restrictions.
+Evaluates citizenship and residency criteria with rigorous distinction between open and unknown:
+- `STRONG`: Student citizenship/residence matches verified eligible geographic criteria.
+- `LIMITED`: Student citizenship is outside published eligible countries.
+- `NOT_ASSESSABLE`: Opportunity is verified as open to international applicants without regional restrictions (`international_students_allowed == YES`).
+- `UNKNOWN`: No geographic eligibility rules were extracted and international eligibility is unconfirmed (`international_students_allowed == UNKNOWN`). Absence of a rule is never assumed to mean unrestricted access.
 
 ### 3. Program of Study Alignment
-Evaluates intended major against eligible university disciplines:
-- `STRONG`: Declared major directly matches targeted eligible fields of study.
-- `MODERATE`: Major belongs to a broader relevant department or related field.
-- `LIMITED`: Declared major is outside published eligible fields.
-- `UNKNOWN`: Declared major is unrecorded or opportunity restricts majors but details require clarification.
-- `NOT_ASSESSABLE`: Opportunity is open across all fields of study; no major restrictions.
+Evaluates intended major against eligible academic disciplines:
+- `STRONG`: Declared major matches verified eligible fields of study.
+- `LIMITED`: Declared major is outside published eligible programs.
+- `NOT_ASSESSABLE`: Opportunity is explicitly verified as open across all undergraduate fields of study (`is_open_to_all_majors == True`).
+- `UNKNOWN`: No field restriction was extracted or published. The system notes: *"No specific field-of-study restriction was extracted or published; confirm eligible academic programs directly with the provider."*
 
 ### 4. Testing Readiness
-Evaluates standardized tests (SAT/ACT) and English language exam preparedness:
-- `READY`: Required exams completed with competitive scores ($\text{SAT} \ge 1400$ or $\text{ACT} \ge 30$).
-- `PARTIALLY_READY`: Exam scores recorded meeting baseline criteria, with recommendation to review score competitiveness.
-- `NEEDS_PREPARATION`: Standardized testing required by provider, but no scores exist on student profile.
-- `UNKNOWN`: Provider testing requirement status is unstated or under review.
-- `NOT_APPLICABLE`: Standardized testing is not required (e.g. test-free or test-optional).
+Evaluates standardized tests (SAT/ACT) against verified provider policies, eliminating arbitrary 1400/30 benchmarks:
+- `NOT_APPLICABLE`: Provider confirms testing is not required (`requires_sat == NO and requires_act == NO`).
+- `UNKNOWN`: Provider testing requirement is unconfirmed (`requires_sat == UNKNOWN and requires_act == UNKNOWN`).
+- `READY`: Standardized testing is required and student has completed the exam (or satisfies an explicit published minimum score threshold).
+- `NEEDS_PREPARATION`: Standardized testing is required by the provider, but no scores are recorded on the student profile (or score falls below the verified minimum).
 
-### 5. Funding Breakdown & Invariant
+### 5. Funding Breakdown & Substantiated Full Funding Invariant
 Decomposes award packages into tuition, fees, room, meals, stipend, health insurance, and books:
-- **Strict Invariant:** If `funding_classification == FULL_TUITION` or tuition is 100% covered while room/meals/stipend are unverified, the system:
-  1. Labels award as `FULL_TUITION`, **NEVER** `FULL_FUNDING`.
-  2. Generates an explicit summary: *"Full tuition only: Tuition is covered. Room, meals, and living expenses are NOT verified as covered; student must plan for living costs."*
-  3. Appends a mandatory funding warning alerting the student to verify room and board costs.
+- **Substantiated Coverage Gate:** An award classified as `FULL_FUNDING` must have verified components substantiating both tuition and comprehensive living expenses (room + meals or living stipend).
+- If living components do not substantiate full living coverage (e.g. only tuition and room are listed), the classification is **downgraded to `FULL_TUITION`**, and the summary states:
+  > *"Full tuition only: Tuition is covered. Room, meals, and living expenses are NOT verified as covered; student must plan for living costs."*
+- Appends a mandatory funding warning alerting the student to budget for non-tuition costs.
 
-### 6. Application Materials Readiness
-Catalogs application requirements (essays, recommendation letters, portfolio, CSS Profile, ISFAA, transcripts):
-- `READY`: All required materials prepared or no supplementary materials published.
-- `PARTIALLY_READY`: Substantial portfolio assembled with minor items pending.
-- `NEEDS_PREPARATION`: One or more mandatory documents (e.g. transcripts, recommendations, personal statement) required.
-- `NOT_APPLICABLE`: Opportunity has no required application documentation published.
+### 6. Truthful Application Materials Readiness
+Inspects actual student preparation state (`prepared_materials`):
+- `NOT_APPLICABLE`: Provider requires no specialized supplementary documents.
+- `UNKNOWN`: Provider requires documents, but student preparation status is unrecorded on the profile. The system honestly reports: *"Student document preparation status is unrecorded."*
+- `READY`: Student profile confirms all required application documents are prepared.
+- `PARTIALLY_READY`: Student has prepared a subset of required documents; remaining items are explicitly listed in `missing_components`.
+- `NEEDS_PREPARATION`: Student profile tracks preparation, but none of the required documents are currently marked as prepared.
 
-### 7. Deadline Assessment
-Evaluates multiple application and financial aid deadlines independently without collapsing distinct deadlines into a single date:
+### 7. Deadline Assessment & Reference Date Determinism
+Evaluates multiple application and financial aid deadlines independently:
 - Deterministic closing-soon threshold: **14 days** ($0 \le \text{days remaining} \le 14 \implies \text{CLOSING\_SOON}$).
-- States: `OPEN`, `CLOSING_SOON`, `UPCOMING`, `CLOSED`, `UNKNOWN`.
+- Time-independent evaluation: Accept explicit `reference_date` to ensure 100% deterministic test and audit execution without clock drift.
 - Tracks `has_passed_deadline` and surfaces the earliest upcoming active deadline.
 
 ---
@@ -137,69 +136,58 @@ The counselor explicitly factors in the verification integrity from Phase 1C and
 
 1. **Fully Verified Opportunities (`VERIFIED`):**
    - No verification warning is emitted.
-   - `evaluation_contains_unverified_facts` is `False`.
+   - `evaluation_contains_unverified_facts = False`.
 2. **Partially Verified Opportunities (`PARTIALLY_VERIFIED`):**
-   - `evaluation_contains_unverified_facts` is set to `True`.
-   - Generates an explicit high-visibility warning:
+   - `evaluation_contains_unverified_facts = True`.
+   - Generates high-visibility warning:
      > *"Caution: This evaluation relies in part on unverified or partially verified scholarship information. Confirm all criteria with the official university source."*
-   - Appends a mandatory action item recommending verification with the official scholarship provider before applying.
 3. **Quarantined / Unverified Opportunities:**
    - Evaluated under strict review notice warning students not to rely on unconfirmed requirements.
 
 ---
 
-## 5. Golden Test Cases Verification
+## 5. Golden Test Cases & Architectural Fixes Verification
 
-All eight golden test scenarios required by the production specification were implemented in `tests/test_counselor_golden_cases.py` and passed with 100% compliance:
+All golden test scenarios and specific feedback fix test cases were verified:
 
-| Case | Scenario | Expected Counselor Output | Test Status |
+| Test Group | Scenario | Epistemic Guarantee | Status |
 |---|---|---|---|
-| **Case A** | Strong alignment across all dimensions | Status `ELIGIBLE`, high academic/geographic alignment, complete funding breakdown, 0 unverified warnings | **PASSED** |
-| **Case B** | Hard ineligible student (GPA below minimum) | Status `INELIGIBLE`, explicit gap identifying GPA shortfall, warning advising against application | **PASSED** |
-| **Case C** | Sparse student profile (missing GPA, major) | Status `NEEDS_INFORMATION`, preserved `UNKNOWN` states, actionable next step to complete profile | **PASSED** |
-| **Case D** | Full tuition award vs. Full funding | Classified as `FULL_TUITION`, living expenses `UNKNOWN`, explicit living cost warning generated | **PASSED** |
-| **Case E** | Deadline closing within 7 days | Earliest deadline flagged as `CLOSING_SOON`, days remaining indicated, urgent deadline warning | **PASSED** |
-| **Case F** | Partially verified opportunity | `evaluation_contains_unverified_facts = True`, explicit verification warning emitted | **PASSED** |
-| **Case G** | Multiple distinct deadlines | Both application and financial aid deadlines preserved independently with separate metadata | **PASSED** |
-| **Case H** | Standardized test gap (SAT required, missing) | Testing readiness `NEEDS_PREPARATION`, actionable next step advising SAT/ACT registration | **PASSED** |
+| **Problem 1** | No published GPA rule | Returns `NOT_ASSESSABLE` across GPA 3.5, 3.8, and 4.0; zero arbitrary cutoffs | **PASSED** |
+| **Problem 2** | No arbitrary SAT 1400 / ACT 30 | SAT 1350 is `READY` when testing required without arbitrary cutoff | **PASSED** |
+| **Problem 3** | Absence of rule $\ne$ open | Program/geo rules without verified open flag return `UNKNOWN` | **PASSED** |
+| **Problem 4** | Truthful application readiness | Unrecorded status yields `UNKNOWN`; active list computes true missing items | **PASSED** |
+| **Problem 5** | Substantiated full funding | `FULL_FUNDING` award with only tuition and room downgraded to `FULL_TUITION` | **PASSED** |
+| **Problem 6** | Testing policy UNKNOWN | `requires_sat == UNKNOWN` returns `ReadinessLevel.UNKNOWN`, never `NOT_APPLICABLE` | **PASSED** |
+| **Problem 7** | Deadline determinism | Deterministic `OPEN` vs `CLOSING_SOON` controlled via explicit `reference_date` | **PASSED** |
+| **Problem 8** | Genuine evidence quotes | Preserves actual source snippets or `None`; zero generic placeholder quotes | **PASSED** |
+| **Golden Cases A–H** | Production benchmark scenarios | Complete end-to-end evaluation across all dimensions | **PASSED** |
 
 ---
 
 ## 6. Determinism & Safety Verification
 
 1. **100-Run Deterministic Reproducibility (`tests/test_counselor_determinism.py`):**
-   - The counselor was executed 100 consecutive times with identical input objects.
-   - Outputs across all 100 runs were verified to produce identical JSON representations with zero drift or stochastic ordering.
+   - Verified 100 consecutive runs produce bit-for-bit identical outputs with zero stochastic variance.
 2. **AST Static Code Analysis (`tests/test_counselor_safety.py`):**
-   - `scholarship_intelligence/counselor/` was parsed via Python `ast` to ensure zero usage of `eval()`, `exec()`, `compile()`, `__import__`, or LLM client libraries (`openai`, `anthropic`, `google.generativeai`).
-   - `CounselorAssessmentResult` and all child models were verified to contain **zero** forbidden score fields (`match_score`, `fit_score`, `competitiveness_score`, `readiness_score`, `confidence_score`, `trust_score`, `acceptance_probability`).
+   - Guaranteed zero dynamic evaluation (`eval`, `exec`, `compile`) and zero LLM imports (`openai`, `anthropic`, `google.generativeai`).
+   - Verified schema contains zero forbidden score attributes (`match_score`, `fit_score`, `competitiveness_score`, `readiness_score`, `confidence_score`, `trust_score`, `acceptance_probability`).
 
 ---
 
 ## 7. Complete Test Suite Execution
 
-All 172 tests in the repository passed without a single failure or warning:
+All 182 tests in the repository passed without a single failure:
 
 ```bash
 $ .venv/bin/pytest -v
-============================= 172 passed in 3.15s ==============================
+============================= 182 passed in 3.27s ==============================
 ```
 
 ---
 
-## 8. Deferred Work & Absolute Boundary
-
-The following areas are intentionally and strictly deferred to Phase 1F or Phase 2+:
-- **Phase 1F:** Benchmark evaluation suite, synthetic corner cases, and stress validation.
-- **Phase 2 (UI):** Web application frontend, interactive counselor dashboard, student profile editor.
-- **FastAPI Endpoints:** Counselor REST endpoints (`POST /api/v1/counselor/evaluate`).
-- **Application Tracking:** Active deadline reminder queues, student document uploads, counselor chat.
-
----
-
-## 9. Gate Stop & Verification Sign-Off
+## 8. Gate Stop & Verification Sign-Off
 
 - **Current Git Branch:** `main`
-- **Phase 1E Status:** `COMPLETE`
+- **Phase 1E Status:** `COMPLETE (CALIBRATED)`
 - **Overall System Status:** `READY_FOR_PHASE_1F`
-- **Stop Condition:** Antigravity has completed all Phase 1E requirements and halted at the Phase 1F boundary awaiting explicit user instructions.
+- **Stop Condition:** Antigravity has addressed all 8 feedback items, verified the complete test suite (182 tests), and halted at the Phase 1F boundary awaiting explicit user instructions.

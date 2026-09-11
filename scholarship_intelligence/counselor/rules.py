@@ -92,24 +92,18 @@ def assess_academic_alignment(
         elif target_rule.status == TriState.UNKNOWN:
             level = AlignmentLevel.UNKNOWN
             if student_gpa is None:
-                details.append("Student GPA is not provided on profile; academic alignment cannot be confirmed.")
+                details.append("Student GPA is not provided on profile; academic alignment cannot be confirmed against published minimum requirement.")
             else:
                 details.append("Grading scale mismatch without defined conversion rule; academic alignment cannot be confirmed.")
         else:
-            level = AlignmentLevel.MODERATE
+            level = AlignmentLevel.NOT_ASSESSABLE
             details.append(f"Academic requirement evaluated to {target_rule.status.value}.")
     else:
         # No explicit GPA rule published
-        if student_gpa is not None:
-            if float(student_gpa) >= 3.5:
-                level = AlignmentLevel.STRONG
-                details.append(f"No explicit minimum GPA published; student maintains a strong academic GPA of {student_gpa}.")
-            else:
-                level = AlignmentLevel.MODERATE
-                details.append(f"No explicit minimum GPA published; student profile GPA is {student_gpa}.")
-        else:
-            level = AlignmentLevel.NOT_ASSESSABLE
-            details.append("No explicit minimum GPA requirement published for this opportunity.")
+        level = AlignmentLevel.NOT_ASSESSABLE
+        details.append(
+            "The opportunity does not publish a minimum GPA requirement, so the system cannot determine academic alignment from GPA alone."
+        )
 
     return AcademicAlignmentContext(
         level=level,
@@ -187,14 +181,14 @@ def assess_geographic_alignment(
             intl_allowed = intl_allowed.value
 
         if intl_allowed == TriState.YES.value:
-            level = AlignmentLevel.STRONG
-            details.append("Opportunity explicitly permits international students with no country restrictions published.")
+            level = AlignmentLevel.NOT_ASSESSABLE
+            details.append("Opportunity is verified as open to international applicants without regional restrictions.")
         elif intl_allowed == TriState.NO.value:
             level = AlignmentLevel.LIMITED
             details.append("Opportunity does not permit international students.")
         else:
-            level = AlignmentLevel.NOT_ASSESSABLE
-            details.append("No geographic or nationality restrictions published for this opportunity.")
+            level = AlignmentLevel.UNKNOWN
+            details.append("No geographic or nationality eligibility rules were extracted or published; confirm international student eligibility directly with the provider.")
 
     return GeographicAlignmentContext(
         level=level,
@@ -256,8 +250,13 @@ def assess_program_alignment(
             details.append("Student declared major is missing or cannot be verified against eligible programs.")
     else:
         has_restriction = False
-        level = AlignmentLevel.NOT_ASSESSABLE
-        details.append("Opportunity is open across all undergraduate fields of study; no major restrictions published.")
+        is_open_to_all = getattr(opportunity, "is_open_to_all_majors", False)
+        if is_open_to_all:
+            level = AlignmentLevel.NOT_ASSESSABLE
+            details.append("Opportunity is explicitly published as open across all undergraduate fields of study.")
+        else:
+            level = AlignmentLevel.UNKNOWN
+            details.append("No specific field-of-study restriction was extracted or published; confirm eligible academic programs directly with the provider.")
 
     return ProgramAlignmentContext(
         level=level,
@@ -274,7 +273,7 @@ def assess_testing_readiness(
     opportunity: Any,
     eligibility_result: EligibilityEvaluationResult,
 ) -> TestingReadinessContext:
-    """Evaluates student testing preparedness for SAT/ACT and English exams."""
+    """Evaluates student testing preparedness for SAT/ACT and English exams using verified provider requirements."""
     sat_score = getattr(profile, "sat_score", None) if not isinstance(profile, dict) else profile.get("sat_score")
     if not isinstance(sat_score, (int, float)):
         sat_score = None
@@ -315,26 +314,67 @@ def assess_testing_readiness(
     details: List[str] = []
     evidence: List[str] = []
 
-    tests_required = (req_sat == TriState.YES) or (req_act == TriState.YES)
+    # Check for explicit test rules in eligibility evaluations
+    test_rules: List[RuleEvaluationResult] = []
+    all_rules = (
+        eligibility_result.satisfied_rules
+        + eligibility_result.failed_rules
+        + eligibility_result.unknown_rules
+        + eligibility_result.conflicting_rules
+    )
+    for r in all_rules:
+        if r.field and any(k in r.field.lower() for k in ("sat", "act", "standardized_test")):
+            test_rules.append(r)
+        elif r.sub_results:
+            for sub in r.sub_results:
+                if sub.field and any(k in sub.field.lower() for k in ("sat", "act", "standardized_test")):
+                    test_rules.append(sub)
 
-    if not tests_required:
+    for r in test_rules:
+        if r.evidence_snippet:
+            evidence.append(r.evidence_snippet)
+
+    # 1. Standardized tests confirmed NOT required
+    if req_sat == TriState.NO and req_act == TriState.NO:
         level = ReadinessLevel.NOT_APPLICABLE
-        details.append("Standardized testing (SAT/ACT) is not required for this scholarship.")
-    else:
-        # Testing is required
-        has_sat = sat_score is not None
-        has_act = act_score is not None
+        details.append("Standardized testing (SAT/ACT) is confirmed not required for this scholarship.")
+    # 2. Testing requirements are UNKNOWN
+    elif req_sat == TriState.UNKNOWN and req_act == TriState.UNKNOWN and not test_rules:
+        level = ReadinessLevel.UNKNOWN
+        details.append("Provider standardized testing requirements are unconfirmed or under review.")
+    # 3. Testing is required by flag or verified rule
+    elif req_sat == TriState.YES or req_act == TriState.YES or test_rules:
+        has_score = (sat_score is not None) or (act_score is not None)
 
-        if has_sat or has_act:
-            if (has_sat and sat_score >= 1400) or (has_act and act_score >= 30):
+        if test_rules:
+            target_test_rule = test_rules[0]
+            if target_test_rule.status == TriState.YES:
                 level = ReadinessLevel.READY
-                details.append(f"Student has completed required standardized testing with strong scores (SAT: {sat_score}, ACT: {act_score}).")
+                details.append(
+                    f"Student test score satisfies published requirement ({target_test_rule.field}: expected {target_test_rule.expected_value}, actual {target_test_rule.actual_value})."
+                )
+            elif target_test_rule.status == TriState.NO:
+                level = ReadinessLevel.NEEDS_PREPARATION
+                details.append(
+                    f"Student test score does not satisfy published requirement ({target_test_rule.field}: expected {target_test_rule.expected_value}, actual {target_test_rule.actual_value})."
+                )
             else:
-                level = ReadinessLevel.PARTIALLY_READY
-                details.append(f"Standardized test score submitted (SAT: {sat_score}, ACT: {act_score}). Review whether retaking is recommended.")
+                level = ReadinessLevel.NEEDS_PREPARATION if not has_score else ReadinessLevel.PARTIALLY_READY
+                details.append(
+                    f"Standardized test requirement status is indeterminate ({target_test_rule.status.value})."
+                )
         else:
-            level = ReadinessLevel.NEEDS_PREPARATION
-            details.append("Standardized tests (SAT/ACT) are required by the provider, but no scores are recorded on the student profile.")
+            # Tests are required, but provider publishes no specific minimum score threshold
+            if has_score:
+                level = ReadinessLevel.READY
+                details.append(f"Standardized testing is required and student has completed the exam (SAT: {sat_score}, ACT: {act_score}).")
+            else:
+                level = ReadinessLevel.NEEDS_PREPARATION
+                details.append("Standardized tests (SAT/ACT) are required by the provider, but no scores are recorded on the student profile.")
+    else:
+        # Partial information
+        level = ReadinessLevel.UNKNOWN
+        details.append("Provider standardized testing policy is partially unconfirmed.")
 
     return TestingReadinessContext(
         level=level,
@@ -349,7 +389,7 @@ def assess_testing_readiness(
 
 
 def assess_funding(opportunity: Any) -> FundingAssessmentContext:
-    """Decomposes verified funding and enforces full tuition != fully funded invariant."""
+    """Decomposes verified funding and enforces substantiated coverage for full funding invariant."""
     award = getattr(opportunity, "award", None)
     classification = FundingClassification.UNKNOWN
     is_renewable = TriState.UNKNOWN
@@ -397,29 +437,56 @@ def assess_funding(opportunity: Any) -> FundingAssessmentContext:
         if isinstance(snippet, str):
             evidence.append(snippet)
 
-    tuition = TriState.YES if FundingComponentType.TUITION.value in comp_types else TriState.UNKNOWN
-    fees = TriState.YES if FundingComponentType.MANDATORY_FEES.value in comp_types else TriState.UNKNOWN
-    room = TriState.YES if FundingComponentType.ROOM.value in comp_types else TriState.UNKNOWN
-    meals = TriState.YES if FundingComponentType.MEALS.value in comp_types else TriState.UNKNOWN
-    living = TriState.YES if FundingComponentType.LIVING_EXPENSES.value in comp_types else TriState.UNKNOWN
-    stipend = TriState.YES if FundingComponentType.STIPEND.value in comp_types else TriState.UNKNOWN
-    insurance = TriState.YES if FundingComponentType.HEALTH_INSURANCE.value in comp_types else TriState.UNKNOWN
-    books = TriState.YES if FundingComponentType.BOOKS.value in comp_types else TriState.UNKNOWN
-    travel = TriState.YES if FundingComponentType.TRAVEL.value in comp_types else TriState.UNKNOWN
+    has_tuition = FundingComponentType.TUITION.value in comp_types
+    has_fees = FundingComponentType.MANDATORY_FEES.value in comp_types
+    has_room = FundingComponentType.ROOM.value in comp_types
+    has_meals = FundingComponentType.MEALS.value in comp_types
+    has_living = FundingComponentType.LIVING_EXPENSES.value in comp_types
+    has_stipend = FundingComponentType.STIPEND.value in comp_types
+    has_insurance = FundingComponentType.HEALTH_INSURANCE.value in comp_types
+    has_books = FundingComponentType.BOOKS.value in comp_types
+    has_travel = FundingComponentType.TRAVEL.value in comp_types
+
+    # Substantive living support requires room and board/meals, or verified comprehensive living expenses/stipend
+    has_comprehensive_living = (
+        (has_room and has_meals)
+        or has_living
+        or (has_stipend and (has_room or has_meals))
+    )
+
+    tuition = TriState.YES if has_tuition else TriState.UNKNOWN
+    fees = TriState.YES if has_fees else TriState.UNKNOWN
+    room = TriState.YES if has_room else TriState.UNKNOWN
+    meals = TriState.YES if has_meals else TriState.UNKNOWN
+    living = TriState.YES if (has_living or (has_room and has_meals)) else TriState.UNKNOWN
+    stipend = TriState.YES if has_stipend else TriState.UNKNOWN
+    insurance = TriState.YES if has_insurance else TriState.UNKNOWN
+    books = TriState.YES if has_books else TriState.UNKNOWN
+    travel = TriState.YES if has_travel else TriState.UNKNOWN
 
     details: List[str] = []
 
-    # Strict Invariant: Full Tuition != Full Funding
+    # Strict Invariant: Full Tuition != Full Funding & FULL_FUNDING must be substantiated
     if classification == FundingClassification.FULL_FUNDING:
-        summary = "Full funding: Verified coverage includes tuition as well as living, room, and board expenses."
-        details.append("Covers full cost of attendance including living expenses.")
+        if has_tuition and has_comprehensive_living:
+            summary = "Full funding: Verified coverage includes tuition as well as living, room, and board expenses."
+            details.append("Covers full cost of attendance including tuition and living expenses.")
+        elif has_tuition:
+            # Downgrade label from FULL_FUNDING to FULL_TUITION because components do not substantiate full living coverage
+            classification = FundingClassification.FULL_TUITION
+            summary = "Full tuition only: Tuition is covered. Room, meals, and living expenses are NOT verified as covered; student must plan for living costs."
+            details.append("Provider award is labeled full funding, but verified components do not substantiate comprehensive room and meal expenses.")
+        else:
+            classification = FundingClassification.PARTIAL_FUNDING
+            summary = "Partial funding: Coverage components do not substantiate complete tuition and living costs."
+            details.append("Award components are incomplete or unverified.")
     elif classification == FundingClassification.FULL_TUITION:
         summary = "Full tuition only: Tuition is covered. Room, meals, and living expenses are NOT verified as covered; student must plan for living costs."
         details.append("Covers 100% tuition. Living, housing, and meal expenses are unconfirmed or student-funded.")
     elif classification == FundingClassification.PARTIAL_FUNDING:
         summary = "Partial funding: Provides a partial contribution toward tuition or attendance costs."
         details.append("Student must secure remaining institutional or private funds.")
-    elif tuition == TriState.YES and room != TriState.YES:
+    elif has_tuition and not has_comprehensive_living:
         summary = "Tuition coverage indicated: Room, meals, and living expenses are NOT verified as covered; student must plan for living costs."
         details.append("Tuition covered. Living, housing, and meal expenses are unconfirmed or student-funded.")
     else:
@@ -447,7 +514,7 @@ def assess_application_readiness(
     profile: Any,
     opportunity: Any,
 ) -> ApplicationReadinessContext:
-    """Evaluates readiness of application materials."""
+    """Evaluates readiness of application materials against student preparation status."""
     app_reqs = getattr(opportunity, "application_requirements", [])
     if not isinstance(app_reqs, list):
         app_reqs = []
@@ -486,19 +553,63 @@ def assess_application_readiness(
     details: List[str] = []
     total = len(required_components) + len(optional_components)
 
+    # Inspect profile for document preparation state
+    prepared_raw = None
+    if isinstance(profile, dict):
+        if "prepared_materials" in profile:
+            prepared_raw = profile["prepared_materials"]
+        elif "application_materials" in profile:
+            prepared_raw = profile["application_materials"]
+        elif "completed_application_items" in profile:
+            prepared_raw = profile["completed_application_items"]
+    else:
+        for attr in ("prepared_materials", "application_materials", "completed_application_items"):
+            val = getattr(profile, attr, None)
+            if val is not None:
+                prepared_raw = val
+                break
+
     if not required_components:
         level = ReadinessLevel.NOT_APPLICABLE
+        missing_components: List[str] = []
         details.append("No specialized application materials or essays published by the provider.")
+    elif prepared_raw is None:
+        # Profile does not record preparation status: epistemic UNKNOWN
+        level = ReadinessLevel.UNKNOWN
+        missing_components = []
+        details.append(
+            f"{len(required_components)} mandatory application document(s) published by provider: {required_components}. Student document preparation status is unrecorded."
+        )
     else:
-        level = ReadinessLevel.NEEDS_PREPARATION
-        details.append(f"{len(required_components)} mandatory application document(s) required: {required_components}.")
+        # Profile provided prepared materials list: truly evaluate readiness
+        prepared_set = {str(item).strip().lower() for item in prepared_raw}
+        missing = []
+        for rc in required_components:
+            rc_lower = rc.strip().lower()
+            if not any(rc_lower in p or p in rc_lower for p in prepared_set):
+                missing.append(rc)
+
+        missing_components = missing
+        if not missing:
+            level = ReadinessLevel.READY
+            details.append(f"All required application documents ({required_components}) are marked as prepared.")
+        elif len(missing) < len(required_components):
+            level = ReadinessLevel.PARTIALLY_READY
+            details.append(
+                f"Student has prepared {len(required_components) - len(missing)} of {len(required_components)} required documents. Pending: {missing}."
+            )
+        else:
+            level = ReadinessLevel.NEEDS_PREPARATION
+            details.append(
+                f"None of the required application documents ({required_components}) are currently marked as prepared."
+            )
 
     return ApplicationReadinessContext(
         level=level,
         total_requirements_count=total,
         required_components=required_components,
         optional_components=optional_components,
-        missing_components=required_components,  # By default requires active submission
+        missing_components=missing_components,
         details=details,
         evidence_snippets=evidence,
     )

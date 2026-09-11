@@ -97,13 +97,13 @@ class ScholarshipCounselorService:
         if eligibility_result.status == EligibilityStatus.ELIGIBLE:
             strengths.append("Meets all published mandatory eligibility conditions.")
         if academic_ctx.level == AlignmentLevel.STRONG:
-            strengths.append("Academic GPA record demonstrates strong alignment with published requirements.")
+            strengths.append("Academic GPA record satisfies published eligibility criteria.")
         if geo_ctx.level == AlignmentLevel.STRONG:
             strengths.append("Citizenship and residency align with eligible international applicant criteria.")
         if prog_ctx.level == AlignmentLevel.STRONG:
             strengths.append(f"Declared major aligns with targeted fields of study ({prog_ctx.eligible_programs}).")
         if test_ctx.level == ReadinessLevel.READY:
-            strengths.append("Standardized test score requirements are satisfied with competitive scores.")
+            strengths.append("Standardized test requirements are confirmed satisfied.")
         if funding_ctx.funding_classification == FundingClassification.FULL_FUNDING:
             strengths.append("Comprehensive full funding covers tuition and living expenses.")
         elif funding_ctx.funding_classification == FundingClassification.FULL_TUITION:
@@ -121,7 +121,7 @@ class ScholarshipCounselorService:
         if prog_ctx.level == AlignmentLevel.LIMITED:
             gaps.append("Declared major is not among published eligible study programs.")
         if test_ctx.level == ReadinessLevel.NEEDS_PREPARATION:
-            gaps.append("Required standardized tests (SAT/ACT) are not on record for this applicant.")
+            gaps.append("Required standardized tests (SAT/ACT) are not on record or do not satisfy published requirements.")
         if deadline_ctx.has_passed_deadline:
             gaps.append("One or more published application deadlines have passed for the current cycle.")
 
@@ -133,9 +133,16 @@ class ScholarshipCounselorService:
         if academic_ctx.level == AlignmentLevel.UNKNOWN:
             unknowns.append("Student GPA or grade scale has not been provided.")
         if geo_ctx.level == AlignmentLevel.UNKNOWN:
-            unknowns.append("Student citizenship context is unverified.")
-        if prog_ctx.has_major_restriction and prog_ctx.level == AlignmentLevel.UNKNOWN:
-            unknowns.append("Declared major is needed to confirm program eligibility.")
+            unknowns.append("Geographic eligibility criteria or student citizenship is unconfirmed.")
+        if prog_ctx.level == AlignmentLevel.UNKNOWN:
+            if prog_ctx.has_major_restriction:
+                unknowns.append("Declared major is needed to confirm program eligibility.")
+            else:
+                unknowns.append("Eligible fields of study were not specified; confirm program restrictions with provider.")
+        if test_ctx.level == ReadinessLevel.UNKNOWN:
+            unknowns.append("Provider standardized testing requirements are unconfirmed or under review.")
+        if app_ctx.level == ReadinessLevel.UNKNOWN:
+            unknowns.append("Student document preparation status for required application materials is unrecorded.")
         if funding_ctx.living_expenses_covered == TriState.UNKNOWN and funding_ctx.funding_classification != FundingClassification.FULL_FUNDING:
             unknowns.append("Coverage of room, board, and personal living expenses is unverified.")
 
@@ -200,14 +207,25 @@ class ScholarshipCounselorService:
         # From official sources
         official_sources = getattr(opportunity, "official_sources", []) or []
         for src in official_sources:
-            url = getattr(src, "source_url", None)
+            raw_url = getattr(src, "url", None) or getattr(src, "source_url", None)
+            url = str(raw_url) if isinstance(raw_url, str) else None
             auth = getattr(src, "authority_tier", AuthorityTier.OFFICIAL_PROVIDER)
+            if isinstance(auth, str):
+                try:
+                    auth = AuthorityTier(auth)
+                except ValueError:
+                    auth = AuthorityTier.OFFICIAL_PROVIDER
+
+            # Extract genuine text snippet if present; never invent placeholder text
+            raw_snippet = getattr(src, "extracted_text_snippet", None) or getattr(src, "source_evidence_snippet", None)
+            snippet = str(raw_snippet) if isinstance(raw_snippet, str) else None
+
             evidence_references.append(
                 EvidenceReference(
                     topic="Official Source Portal",
                     source_url=url,
                     source_authority=auth,
-                    evidence_quote="Primary authoritative opportunity source",
+                    evidence_quote=snippet,
                 )
             )
 
@@ -220,6 +238,33 @@ class ScholarshipCounselorService:
                 )
             )
 
+        # From geographic evidence
+        for snippet in geo_ctx.evidence_snippets:
+            evidence_references.append(
+                EvidenceReference(
+                    topic="Geographic Eligibility",
+                    evidence_quote=snippet,
+                )
+            )
+
+        # From program evidence
+        for snippet in prog_ctx.evidence_snippets:
+            evidence_references.append(
+                EvidenceReference(
+                    topic="Program of Study",
+                    evidence_quote=snippet,
+                )
+            )
+
+        # From testing evidence
+        for snippet in test_ctx.evidence_snippets:
+            evidence_references.append(
+                EvidenceReference(
+                    topic="Standardized Testing",
+                    evidence_quote=snippet,
+                )
+            )
+
         # From funding evidence
         for snippet in funding_ctx.evidence_snippets:
             evidence_references.append(
@@ -228,6 +273,16 @@ class ScholarshipCounselorService:
                     evidence_quote=snippet,
                 )
             )
+
+        # From deadline evidence
+        for d in deadline_ctx.deadlines:
+            if d.evidence_snippet:
+                evidence_references.append(
+                    EvidenceReference(
+                        topic=f"Deadline ({d.deadline_type.value})",
+                        evidence_quote=d.evidence_snippet,
+                    )
+                )
 
         # Eligibility summary text
         elig_summary = f"Status: {eligibility_result.status.value}."

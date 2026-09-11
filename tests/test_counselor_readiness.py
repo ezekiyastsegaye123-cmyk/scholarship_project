@@ -42,7 +42,8 @@ def test_testing_readiness_not_applicable_when_tests_not_required():
     assert ctx.level == ReadinessLevel.NOT_APPLICABLE
 
 
-def test_application_readiness_lists_required_materials():
+def test_application_readiness_unrecorded_profile_yields_unknown():
+    """When student profile does not track document preparation, readiness is UNKNOWN."""
     opp = MagicMock()
     req1 = MagicMock(title="Official Secondary School Transcript", kind="REQUIRED", source_evidence_snippet="Transcript required")
     req2 = MagicMock(title="Teacher Recommendation Letter", kind="REQUIRED", source_evidence_snippet="Two recommendations required")
@@ -52,9 +53,36 @@ def test_application_readiness_lists_required_materials():
 
     profile = {}
     ctx = assess_application_readiness(profile, opp)
-    assert ctx.level == ReadinessLevel.NEEDS_PREPARATION
+    assert ctx.level == ReadinessLevel.UNKNOWN
     assert ctx.total_requirements_count == 3
     assert len(ctx.required_components) == 2
     assert "Official Secondary School Transcript" in ctx.required_components
     assert "Teacher Recommendation Letter" in ctx.required_components
     assert "Optional Art Portfolio" in ctx.optional_components
+
+
+def test_application_readiness_evaluates_prepared_materials():
+    """When student profile provides prepared items, assess readiness honestly."""
+    opp = MagicMock()
+    req1 = MagicMock(title="Official Secondary School Transcript", kind="REQUIRED")
+    req2 = MagicMock(title="Teacher Recommendation Letter", kind="REQUIRED")
+    opp.application_requirements = [req1, req2]
+    opp.requirements = []
+
+    # Student has prepared all required documents
+    profile_ready = {"prepared_materials": ["Official Secondary School Transcript", "Teacher Recommendation Letter"]}
+    ctx_ready = assess_application_readiness(profile_ready, opp)
+    assert ctx_ready.level == ReadinessLevel.READY
+    assert len(ctx_ready.missing_components) == 0
+
+    # Student has prepared one document
+    profile_partial = {"prepared_materials": ["Official Secondary School Transcript"]}
+    ctx_partial = assess_application_readiness(profile_partial, opp)
+    assert ctx_partial.level == ReadinessLevel.PARTIALLY_READY
+    assert ctx_partial.missing_components == ["Teacher Recommendation Letter"]
+
+    # Student has prepared none
+    profile_none = {"prepared_materials": []}
+    ctx_none = assess_application_readiness(profile_none, opp)
+    assert ctx_none.level == ReadinessLevel.NEEDS_PREPARATION
+    assert len(ctx_none.missing_components) == 2
