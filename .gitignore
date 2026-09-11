@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+scholarship_intelligence.db
+alembic.log
+*.sqlite3
+*.egg-info/
+dist/
+build/

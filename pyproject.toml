@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "scholarship-intelligence"
+version = "0.1.0"
+description = "Scholarship Discovery, Verification & Counselor Platform - Phase 1A Data Foundation"
+authors = [{ name = "Data Architect & Engineering Team" }]
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.10.0",
+    "sqlalchemy>=2.0.0",
+    "alembic>=1.14.0",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = "-v"
