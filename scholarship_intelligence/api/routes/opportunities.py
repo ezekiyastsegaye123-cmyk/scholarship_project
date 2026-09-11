@@ -4,17 +4,12 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
+from scholarship_intelligence.api.dependencies import get_db
 from scholarship_intelligence.api.schemas import OpportunityDetail, PaginatedOpportunities, VerificationHistoryItem
 from scholarship_intelligence.api.service import ApiService
-from scholarship_intelligence.db.session import get_db_session
 
 router = APIRouter(prefix="/opportunities", tags=["Opportunities"])
 service = ApiService()
-
-
-def get_db():
-    with get_db_session() as session:
-        yield session
 
 
 @router.get("", response_model=PaginatedOpportunities)

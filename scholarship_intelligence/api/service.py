@@ -6,18 +6,39 @@ from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from scholarship_intelligence.api.schemas import (
+    ApplicationRecordCreate,
+    ApplicationRecordItem,
+    ApplicationRecordUpdate,
+    AuthResponse,
     ComparisonItem,
     ComparisonResponse,
+    ComparisonSelectionItem,
     IngestionRunItem,
     IngestionSourceItem,
     OpportunityDetail,
     OpportunitySummary,
+    PaginatedApplications,
     PaginatedOpportunities,
+    PaginatedSavedOpportunities,
+    PersistentComparisonResponse,
+    PersistentProfileResponse,
+    PersistentProfileUpdate,
+    SavedOpportunityItem,
+    StudentAccountItem,
     StudentProfileInput,
     VerificationHistoryItem,
 )
+from scholarship_intelligence.auth.security import (
+    AuthenticationError,
+    create_access_token,
+    hash_password,
+    normalize_email,
+    validate_password_strength,
+    verify_password,
+)
 from scholarship_intelligence.counselor.service import ScholarshipCounselorService
 from scholarship_intelligence.domain.enums import (
+    ApplicationStatus,
     DeadlineType,
     FundingClassification,
     TriState,
@@ -25,15 +46,21 @@ from scholarship_intelligence.domain.enums import (
 )
 from scholarship_intelligence.evaluator.engine import EligibilityEvaluator
 from scholarship_intelligence.ingestion.freshness import FreshnessClassifier
+from scholarship_intelligence.models.application_record import ApplicationRecord
+from scholarship_intelligence.models.comparison_selection import ComparisonSelection
 from scholarship_intelligence.models.deadline import Deadline
 from scholarship_intelligence.models.ingestion_run import IngestionRun
 from scholarship_intelligence.models.ingestion_source import IngestionSource
 from scholarship_intelligence.models.opportunity import ScholarshipOpportunity
 from scholarship_intelligence.models.provider import Provider
+from scholarship_intelligence.models.saved_opportunity import SavedOpportunity
+from scholarship_intelligence.models.student_account import StudentAccount
+from scholarship_intelligence.models.student_profile import StudentProfile
 from scholarship_intelligence.models.university import University
 from scholarship_intelligence.models.verification_history import VerificationHistory
 from scholarship_intelligence.schemas.counselor import CounselorAssessmentResult
 from scholarship_intelligence.schemas.eligibility_eval import EligibilityEvaluationResult
+from fastapi import HTTPException, status
 
 
 class ApiService:
@@ -161,6 +188,14 @@ class ApiService:
             freshness_message=freshness.message,
             last_crawled_at=freshness.last_crawled_at,
         )
+
+    def _build_opportunity_summary(
+        self, opp: Optional[ScholarshipOpportunity], reference_date: Optional[date] = None
+    ) -> Optional[OpportunitySummary]:
+        """Convenience wrapper to safely convert an opportunity to OpportunitySummary."""
+        if opp is None:
+            return None
+        return self.to_summary(opp, reference_date=reference_date)
 
     def list_opportunities(
         self,
@@ -718,3 +753,520 @@ class ApiService:
             )
             for s in sources
         ]
+
+    # ==============================================================================
+    # PHASE 4: ACCOUNTS & AUTHENTICATION
+    # ==============================================================================
+
+    def register_account(self, session: Session, email: str, password: str) -> AuthResponse:
+        """Registers a new student account transactionally with initial profile."""
+        try:
+            norm_email = normalize_email(email)
+            validate_password_strength(password)
+        except AuthenticationError as e:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+        existing = session.query(StudentAccount).filter(StudentAccount.email == norm_email).first()
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="An account with this email address already exists.",
+            )
+
+        pwd_hash = hash_password(password)
+        account = StudentAccount(
+            email=norm_email,
+            password_hash=pwd_hash,
+            is_active=True,
+        )
+        session.add(account)
+        session.flush()  # assign account.id
+
+        # Create linked default student profile
+        profile = StudentProfile(
+            account_id=account.id,
+            citizenship_country="UNKNOWN",
+            residence_country="UNKNOWN",
+            intended_degree_level="BACHELOR",
+            intended_destination_country="US",
+        )
+        session.add(profile)
+        session.commit()
+        session.refresh(account)
+
+        token, expires_at = create_access_token(account_id=account.id, email=account.email)
+        return AuthResponse(
+            account=StudentAccountItem(
+                id=account.id,
+                email=account.email,
+                is_active=account.is_active,
+                created_at=account.created_at,
+                last_login_at=account.last_login_at,
+                has_profile=True,
+            ),
+            token=token,
+            expires_at=expires_at,
+        )
+
+    def login_account(self, session: Session, email: str, password: str) -> AuthResponse:
+        """Authenticates student credentials and issues access session token."""
+        try:
+            norm_email = normalize_email(email)
+        except AuthenticationError:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid credentials.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        account = session.query(StudentAccount).filter(StudentAccount.email == norm_email).first()
+        if not account or not verify_password(password, account.password_hash) or not account.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid credentials.",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        account.last_login_at = datetime.now(timezone.utc)
+        session.commit()
+        session.refresh(account)
+
+        token, expires_at = create_access_token(account_id=account.id, email=account.email)
+        return AuthResponse(
+            account=StudentAccountItem(
+                id=account.id,
+                email=account.email,
+                is_active=account.is_active,
+                created_at=account.created_at,
+                last_login_at=account.last_login_at,
+                has_profile=account.profile is not None,
+            ),
+            token=token,
+            expires_at=expires_at,
+        )
+
+    def get_me(self, session: Session, account: StudentAccount) -> StudentAccountItem:
+        """Returns safe representation of currently authenticated student account."""
+        return StudentAccountItem(
+            id=account.id,
+            email=account.email,
+            is_active=account.is_active,
+            created_at=account.created_at,
+            last_login_at=account.last_login_at,
+            has_profile=account.profile is not None,
+        )
+
+    # ==============================================================================
+    # PHASE 4: PERSISTENT STUDENT PROFILE
+    # ==============================================================================
+
+    def get_persistent_profile(self, session: Session, account_id: str) -> PersistentProfileResponse:
+        """Retrieves persistent profile owned by the authenticated student account."""
+        profile = session.query(StudentProfile).filter(StudentProfile.account_id == account_id).first()
+        if not profile:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Student profile not found.")
+
+        return PersistentProfileResponse(
+            id=profile.id,
+            account_id=profile.account_id,
+            citizenship_country=profile.citizenship_country,
+            residence_country=profile.residence_country,
+            intended_degree_level=profile.intended_degree_level,
+            intended_destination_country=profile.intended_destination_country,
+            gpa=profile.gpa,
+            gpa_scale=profile.gpa_scale,
+            intended_major=profile.intended_major,
+            english_test_type=profile.english_test_type,
+            english_test_score=profile.english_test_score,
+            sat_score=profile.sat_score,
+            act_score=profile.act_score,
+            financial_need_tier=profile.financial_need_tier,
+            academic_achievements=profile.academic_achievements or [],
+            extracurricular_activities=profile.extracurricular_activities or [],
+            interests=profile.interests or [],
+            created_at=profile.created_at,
+            updated_at=profile.updated_at,
+        )
+
+    def update_persistent_profile(
+        self,
+        session: Session,
+        account_id: str,
+        update: PersistentProfileUpdate,
+    ) -> PersistentProfileResponse:
+        """Updates persistent profile fields owned strictly by authenticated student."""
+        profile = session.query(StudentProfile).filter(StudentProfile.account_id == account_id).first()
+        if not profile:
+            profile = StudentProfile(
+                account_id=account_id,
+                citizenship_country="UNKNOWN",
+                residence_country="UNKNOWN",
+                intended_degree_level="BACHELOR",
+                intended_destination_country="US",
+            )
+            session.add(profile)
+            session.flush()
+
+        update_dict = update.model_dump(exclude_unset=True)
+        for field, value in update_dict.items():
+            if hasattr(profile, field) and field not in ("id", "account_id", "created_at"):
+                setattr(profile, field, value)
+
+        session.commit()
+        session.refresh(profile)
+
+        return self.get_persistent_profile(session, account_id)
+
+    # ==============================================================================
+    # PHASE 4: SAVED SCHOLARSHIPS
+    # ==============================================================================
+
+    def save_opportunity(self, session: Session, account_id: str, opportunity_id: str) -> SavedOpportunityItem:
+        """Saves a scholarship opportunity reference idempotently for the student."""
+        opp = session.query(ScholarshipOpportunity).filter(ScholarshipOpportunity.id == opportunity_id).first()
+        if not opp:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scholarship opportunity not found.")
+
+        existing = session.query(SavedOpportunity).filter(
+            SavedOpportunity.student_account_id == account_id,
+            SavedOpportunity.opportunity_id == opportunity_id,
+        ).first()
+
+        if existing:
+            return SavedOpportunityItem(
+                id=existing.id,
+                student_account_id=existing.student_account_id,
+                opportunity_id=existing.opportunity_id,
+                saved_at=existing.created_at,
+                opportunity=self._build_opportunity_summary(opp),
+            )
+
+        saved = SavedOpportunity(
+            student_account_id=account_id,
+            opportunity_id=opportunity_id,
+        )
+        session.add(saved)
+        session.commit()
+        session.refresh(saved)
+
+        return SavedOpportunityItem(
+            id=saved.id,
+            student_account_id=saved.student_account_id,
+            opportunity_id=saved.opportunity_id,
+            saved_at=saved.created_at,
+            opportunity=self._build_opportunity_summary(opp),
+        )
+
+    def unsave_opportunity(self, session: Session, account_id: str, opportunity_id: str) -> bool:
+        """Removes a saved scholarship opportunity reference."""
+        saved = session.query(SavedOpportunity).filter(
+            SavedOpportunity.student_account_id == account_id,
+            SavedOpportunity.opportunity_id == opportunity_id,
+        ).first()
+
+        if not saved:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Opportunity is not in saved list.")
+
+        session.delete(saved)
+        session.commit()
+        return True
+
+    def list_saved_opportunities(
+        self,
+        session: Session,
+        account_id: str,
+        page: int = 1,
+        page_size: int = 10,
+    ) -> PaginatedSavedOpportunities:
+        """Retrieves paginated saved opportunities with current canonical intelligence."""
+        query = (
+            session.query(SavedOpportunity)
+            .filter(SavedOpportunity.student_account_id == account_id)
+            .order_by(SavedOpportunity.created_at.desc())
+        )
+        total = query.count()
+        offset = (page - 1) * page_size
+        records = query.offset(offset).limit(page_size).all()
+
+        items = [
+            SavedOpportunityItem(
+                id=r.id,
+                student_account_id=r.student_account_id,
+                opportunity_id=r.opportunity_id,
+                saved_at=r.created_at,
+                opportunity=self._build_opportunity_summary(r.opportunity),
+            )
+            for r in records
+        ]
+        total_pages = math.ceil(total / page_size) if total > 0 else 1
+        return PaginatedSavedOpportunities(
+            items=items,
+            total=total,
+            page=page,
+            page_size=page_size,
+            total_pages=total_pages,
+        )
+
+    # ==============================================================================
+    # PHASE 4: APPLICATION TRACKING
+    # ==============================================================================
+
+    def create_application(
+        self,
+        session: Session,
+        account_id: str,
+        data: ApplicationRecordCreate,
+    ) -> ApplicationRecordItem:
+        """Creates an application tracking record for an opportunity."""
+        opp = session.query(ScholarshipOpportunity).filter(ScholarshipOpportunity.id == data.opportunity_id).first()
+        if not opp:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scholarship opportunity not found.")
+
+        # Check valid status enum
+        valid_statuses = {s.value for s in ApplicationStatus}
+        if data.status not in valid_statuses:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid application status '{data.status}'.")
+
+        existing = session.query(ApplicationRecord).filter(
+            ApplicationRecord.student_account_id == account_id,
+            ApplicationRecord.opportunity_id == data.opportunity_id,
+        ).first()
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="An application tracker record already exists for this scholarship.",
+            )
+
+        app_rec = ApplicationRecord(
+            student_account_id=account_id,
+            opportunity_id=data.opportunity_id,
+            status=data.status,
+            student_notes=data.student_notes,
+            submitted_at=data.submitted_at,
+        )
+        session.add(app_rec)
+        session.commit()
+        session.refresh(app_rec)
+
+        return ApplicationRecordItem(
+            id=app_rec.id,
+            student_account_id=app_rec.student_account_id,
+            opportunity_id=app_rec.opportunity_id,
+            status=app_rec.status,
+            student_notes=app_rec.student_notes,
+            submitted_at=app_rec.submitted_at,
+            created_at=app_rec.created_at,
+            updated_at=app_rec.updated_at,
+            opportunity=self._build_opportunity_summary(opp),
+        )
+
+    def get_application(self, session: Session, account_id: str, application_id: str) -> ApplicationRecordItem:
+        """Retrieves a single application tracking record with strict ownership check."""
+        app_rec = session.query(ApplicationRecord).filter(
+            ApplicationRecord.id == application_id,
+            ApplicationRecord.student_account_id == account_id,
+        ).first()
+        if not app_rec:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application record not found.")
+
+        return ApplicationRecordItem(
+            id=app_rec.id,
+            student_account_id=app_rec.student_account_id,
+            opportunity_id=app_rec.opportunity_id,
+            status=app_rec.status,
+            student_notes=app_rec.student_notes,
+            submitted_at=app_rec.submitted_at,
+            created_at=app_rec.created_at,
+            updated_at=app_rec.updated_at,
+            opportunity=self._build_opportunity_summary(app_rec.opportunity),
+        )
+
+    def update_application(
+        self,
+        session: Session,
+        account_id: str,
+        application_id: str,
+        update: ApplicationRecordUpdate,
+    ) -> ApplicationRecordItem:
+        """Updates an application tracking record with strict ownership check."""
+        app_rec = session.query(ApplicationRecord).filter(
+            ApplicationRecord.id == application_id,
+            ApplicationRecord.student_account_id == account_id,
+        ).first()
+        if not app_rec:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application record not found.")
+
+        if update.status is not None:
+            valid_statuses = {s.value for s in ApplicationStatus}
+            if update.status not in valid_statuses:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid application status '{update.status}'.")
+            app_rec.status = update.status
+
+        if update.student_notes is not None:
+            app_rec.student_notes = update.student_notes
+
+        if update.submitted_at is not None:
+            app_rec.submitted_at = update.submitted_at
+
+        session.commit()
+        session.refresh(app_rec)
+
+        return ApplicationRecordItem(
+            id=app_rec.id,
+            student_account_id=app_rec.student_account_id,
+            opportunity_id=app_rec.opportunity_id,
+            status=app_rec.status,
+            student_notes=app_rec.student_notes,
+            submitted_at=app_rec.submitted_at,
+            created_at=app_rec.created_at,
+            updated_at=app_rec.updated_at,
+            opportunity=self._build_opportunity_summary(app_rec.opportunity),
+        )
+
+    def delete_application(self, session: Session, account_id: str, application_id: str) -> bool:
+        """Deletes an application tracking record with strict ownership check."""
+        app_rec = session.query(ApplicationRecord).filter(
+            ApplicationRecord.id == application_id,
+            ApplicationRecord.student_account_id == account_id,
+        ).first()
+        if not app_rec:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application record not found.")
+
+        session.delete(app_rec)
+        session.commit()
+        return True
+
+    def list_applications(
+        self,
+        session: Session,
+        account_id: str,
+        page: int = 1,
+        page_size: int = 10,
+    ) -> PaginatedApplications:
+        """Retrieves paginated application tracking records with current canonical intelligence."""
+        query = (
+            session.query(ApplicationRecord)
+            .filter(ApplicationRecord.student_account_id == account_id)
+            .order_by(ApplicationRecord.updated_at.desc())
+        )
+        total = query.count()
+        offset = (page - 1) * page_size
+        records = query.offset(offset).limit(page_size).all()
+
+        items = [
+            ApplicationRecordItem(
+                id=r.id,
+                student_account_id=r.student_account_id,
+                opportunity_id=r.opportunity_id,
+                status=r.status,
+                student_notes=r.student_notes,
+                submitted_at=r.submitted_at,
+                created_at=r.created_at,
+                updated_at=r.updated_at,
+                opportunity=self._build_opportunity_summary(r.opportunity),
+            )
+            for r in records
+        ]
+        total_pages = math.ceil(total / page_size) if total > 0 else 1
+        return PaginatedApplications(
+            items=items,
+            total=total,
+            page=page,
+            page_size=page_size,
+            total_pages=total_pages,
+        )
+
+    # ==============================================================================
+    # PHASE 4: PERSISTENT COMPARISON
+    # ==============================================================================
+
+    def add_comparison_selection(
+        self,
+        session: Session,
+        account_id: str,
+        opportunity_id: str,
+    ) -> PersistentComparisonResponse:
+        """Adds opportunity to persistent comparison set up to MAX_COMPARE = 4."""
+        opp = session.query(ScholarshipOpportunity).filter(ScholarshipOpportunity.id == opportunity_id).first()
+        if not opp:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scholarship opportunity not found.")
+
+        existing = session.query(ComparisonSelection).filter(
+            ComparisonSelection.student_account_id == account_id,
+            ComparisonSelection.opportunity_id == opportunity_id,
+        ).first()
+
+        if existing:
+            return self.list_comparison_selections(session, account_id)
+
+        count = session.query(ComparisonSelection).filter(ComparisonSelection.student_account_id == account_id).count()
+        if count >= 4:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="You can compare a maximum of 4 scholarships simultaneously.",
+            )
+
+        selection = ComparisonSelection(
+            student_account_id=account_id,
+            opportunity_id=opportunity_id,
+        )
+        session.add(selection)
+        session.commit()
+
+        return self.list_comparison_selections(session, account_id)
+
+    def remove_comparison_selection(
+        self,
+        session: Session,
+        account_id: str,
+        opportunity_id: str,
+    ) -> PersistentComparisonResponse:
+        """Removes an opportunity from persistent comparison set."""
+        existing = session.query(ComparisonSelection).filter(
+            ComparisonSelection.student_account_id == account_id,
+            ComparisonSelection.opportunity_id == opportunity_id,
+        ).first()
+
+        if existing:
+            session.delete(existing)
+            session.commit()
+
+        return self.list_comparison_selections(session, account_id)
+
+    def list_comparison_selections(
+        self,
+        session: Session,
+        account_id: str,
+    ) -> PersistentComparisonResponse:
+        """Lists all active comparison selections for the student."""
+        selections = (
+            session.query(ComparisonSelection)
+            .filter(ComparisonSelection.student_account_id == account_id)
+            .order_by(ComparisonSelection.created_at.asc())
+            .all()
+        )
+        items = [
+            ComparisonSelectionItem(
+                id=s.id,
+                opportunity_id=s.opportunity_id,
+                created_at=s.created_at,
+                opportunity=self._build_opportunity_summary(s.opportunity),
+            )
+            for s in selections
+        ]
+        return PersistentComparisonResponse(
+            items=items,
+            count=len(items),
+            max_allowed=4,
+        )
+
+    def clear_comparison_selections(
+        self,
+        session: Session,
+        account_id: str,
+    ) -> PersistentComparisonResponse:
+        """Clears all comparison selections for the student."""
+        session.query(ComparisonSelection).filter(ComparisonSelection.student_account_id == account_id).delete()
+        session.commit()
+        return PersistentComparisonResponse(items=[], count=0, max_allowed=4)
+

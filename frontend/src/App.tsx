@@ -1,10 +1,26 @@
-import React, { useState, useEffect } from 'react';
-import type { StudentProfile } from './types';
-import { Navbar } from './components/Navbar';
+import React, { useState, useEffect, useCallback } from 'react';
+import type { StudentProfile, StudentAccount } from './types';
+import { Navbar, type NavTab } from './components/Navbar';
 import { DiscoverPage } from './pages/DiscoverPage';
 import { OpportunityDetailPage } from './pages/OpportunityDetailPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { ComparePage } from './pages/ComparePage';
+import { SavedOpportunitiesPage } from './pages/SavedOpportunitiesPage';
+import { ApplicationTrackerPage } from './pages/ApplicationTrackerPage';
+import { AuthModal } from './components/AuthModal';
+import {
+  authMe,
+  authLogout,
+  fetchComparisonSelections,
+  addComparisonSelection,
+  removeComparisonSelection,
+  clearComparisonSelections,
+  saveOpportunity,
+  unsaveOpportunity,
+  fetchSavedOpportunities,
+  fetchApplications,
+  getAuthToken,
+} from './api/client';
 import './App.css';
 
 const DEFAULT_PROFILE: StudentProfile = {
@@ -28,8 +44,15 @@ const DEFAULT_PROFILE: StudentProfile = {
 };
 
 export const App: React.FC = () => {
-  const [currentTab, setCurrentTab] = useState<'discover' | 'profile' | 'compare'>('discover');
+  const [currentTab, setCurrentTab] = useState<NavTab>('discover');
   const [selectedOpportunityId, setSelectedOpportunityId] = useState<string | null>(null);
+
+  // Authentication State
+  const [currentUser, setCurrentUser] = useState<StudentAccount | null>(null);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
+  const [authModalMode, setAuthModalMode] = useState<'login' | 'register'>('login');
+
+  // Comparison State
   const [comparedIds, setComparedIds] = useState<string[]>(() => {
     try {
       const saved = localStorage.getItem('scholarship_compare_ids');
@@ -38,6 +61,11 @@ export const App: React.FC = () => {
       return [];
     }
   });
+
+  // Saved Opportunities & Applications counts
+  const [savedIds, setSavedIds] = useState<string[]>([]);
+  const [applicationsCount, setApplicationsCount] = useState<number>(0);
+  const [trackOppId, setTrackOppId] = useState<string | null>(null);
 
   const [studentProfile, setStudentProfile] = useState<StudentProfile>(() => {
     try {
@@ -48,13 +76,61 @@ export const App: React.FC = () => {
     }
   });
 
+  // Session restoration on mount
   useEffect(() => {
-    try {
-      localStorage.setItem('scholarship_compare_ids', JSON.stringify(comparedIds));
-    } catch (e) {
-      console.error('Failed to save compare IDs to localStorage', e);
+    const token = getAuthToken();
+    if (token) {
+      authMe()
+        .then((account) => {
+          setCurrentUser(account);
+        })
+        .catch(() => {
+          setCurrentUser(null);
+        });
     }
-  }, [comparedIds]);
+  }, []);
+
+  // Sync authenticated user data (comparisons, saved IDs, applications count)
+  const syncUserData = useCallback(async () => {
+    if (!currentUser) return;
+    try {
+      const [compRes, savedRes, appsRes] = await Promise.all([
+        fetchComparisonSelections().catch(() => null),
+        fetchSavedOpportunities(1, 100).catch(() => null),
+        fetchApplications(1, 1).catch(() => null),
+      ]);
+
+      if (compRes) {
+        const ids = compRes.items.map((it) => it.opportunity_id);
+        setComparedIds(ids);
+      }
+      if (savedRes) {
+        setSavedIds(savedRes.items.map((it) => it.opportunity_id));
+      }
+      if (appsRes) {
+        setApplicationsCount(appsRes.total);
+      }
+    } catch (e) {
+      console.error('Failed to sync authenticated user data', e);
+    }
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (currentUser) {
+      syncUserData();
+    }
+  }, [currentUser, syncUserData]);
+
+  // Persist local comparisons when unauthenticated
+  useEffect(() => {
+    if (!currentUser) {
+      try {
+        localStorage.setItem('scholarship_compare_ids', JSON.stringify(comparedIds));
+      } catch (e) {
+        console.error('Failed to save compare IDs to localStorage', e);
+      }
+    }
+  }, [comparedIds, currentUser]);
 
   const handleSaveProfile = (profile: StudentProfile) => {
     setStudentProfile(profile);
@@ -65,26 +141,101 @@ export const App: React.FC = () => {
     }
   };
 
-  const handleToggleCompare = (id: string) => {
-    setComparedIds((prev) => {
-      if (prev.includes(id)) {
-        return prev.filter((item) => item !== id);
-      } else {
-        if (prev.length >= 4) {
-          alert('You can compare a maximum of 4 scholarships simultaneously.');
-          return prev;
+  const handleToggleCompare = async (id: string) => {
+    if (currentUser) {
+      if (comparedIds.includes(id)) {
+        try {
+          const res = await removeComparisonSelection(id);
+          setComparedIds(res.items.map((it) => it.opportunity_id));
+        } catch (err) {
+          alert(err instanceof Error ? err.message : 'Failed to update comparison');
         }
-        return [...prev, id];
+      } else {
+        if (comparedIds.length >= 4) {
+          alert('You can compare a maximum of 4 scholarships simultaneously.');
+          return;
+        }
+        try {
+          const res = await addComparisonSelection(id);
+          setComparedIds(res.items.map((it) => it.opportunity_id));
+        } catch (err) {
+          alert(err instanceof Error ? err.message : 'Failed to update comparison');
+        }
       }
-    });
+    } else {
+      setComparedIds((prev) => {
+        if (prev.includes(id)) {
+          return prev.filter((item) => item !== id);
+        } else {
+          if (prev.length >= 4) {
+            alert('You can compare a maximum of 4 scholarships simultaneously.');
+            return prev;
+          }
+          return [...prev, id];
+        }
+      });
+    }
   };
 
-  const handleRemoveFromCompare = (id: string) => {
-    setComparedIds((prev) => prev.filter((item) => item !== id));
+  const handleRemoveFromCompare = async (id: string) => {
+    if (currentUser) {
+      try {
+        const res = await removeComparisonSelection(id);
+        setComparedIds(res.items.map((it) => it.opportunity_id));
+      } catch (err) {
+        alert(err instanceof Error ? err.message : 'Failed to remove from comparison');
+      }
+    } else {
+      setComparedIds((prev) => prev.filter((item) => item !== id));
+    }
   };
 
-  const handleClearCompare = () => {
-    setComparedIds([]);
+  const handleClearCompare = async () => {
+    if (currentUser) {
+      try {
+        await clearComparisonSelections();
+        setComparedIds([]);
+      } catch (err) {
+        alert(err instanceof Error ? err.message : 'Failed to clear comparisons');
+      }
+    } else {
+      setComparedIds([]);
+    }
+  };
+
+  const handleToggleSave = async (id: string) => {
+    if (!currentUser) {
+      setAuthModalMode('login');
+      setIsAuthModalOpen(true);
+      return;
+    }
+
+    if (savedIds.includes(id)) {
+      try {
+        await unsaveOpportunity(id);
+        setSavedIds((prev) => prev.filter((item) => item !== id));
+      } catch (err) {
+        alert(err instanceof Error ? err.message : 'Failed to unsave scholarship');
+      }
+    } else {
+      try {
+        await saveOpportunity(id);
+        setSavedIds((prev) => [...prev, id]);
+      } catch (err) {
+        alert(err instanceof Error ? err.message : 'Failed to save scholarship');
+      }
+    }
+  };
+
+  const handleTrackApplication = (id: string) => {
+    if (!currentUser) {
+      setAuthModalMode('login');
+      setIsAuthModalOpen(true);
+      return;
+    }
+    setTrackOppId(id);
+    setSelectedOpportunityId(null);
+    setCurrentTab('applications');
   };
 
   const handleSelectOpportunity = (id: string) => {
@@ -97,6 +248,16 @@ export const App: React.FC = () => {
     setCurrentTab('discover');
   };
 
+  const handleLogout = async () => {
+    await authLogout();
+    setCurrentUser(null);
+    setSavedIds([]);
+    setApplicationsCount(0);
+    if (currentTab === 'saved' || currentTab === 'applications') {
+      setCurrentTab('discover');
+    }
+  };
+
   return (
     <div className="app-layout">
       <Navbar
@@ -107,6 +268,14 @@ export const App: React.FC = () => {
           window.scrollTo({ top: 0, behavior: 'smooth' });
         }}
         selectedCompareCount={comparedIds.length}
+        currentUser={currentUser}
+        savedCount={savedIds.length}
+        applicationsCount={applicationsCount}
+        onOpenAuth={(mode) => {
+          setAuthModalMode(mode);
+          setIsAuthModalOpen(true);
+        }}
+        onLogout={handleLogout}
       />
 
       <main className="main-content" id="main-content">
@@ -121,6 +290,9 @@ export const App: React.FC = () => {
               setSelectedOpportunityId(null);
               setCurrentTab('profile');
             }}
+            isSaved={savedIds.includes(selectedOpportunityId)}
+            onToggleSave={handleToggleSave}
+            onTrackApplication={handleTrackApplication}
           />
         ) : currentTab === 'discover' ? (
           <DiscoverPage
@@ -144,6 +316,18 @@ export const App: React.FC = () => {
             onGoToDiscover={() => setCurrentTab('discover')}
             onSelectOpportunity={handleSelectOpportunity}
           />
+        ) : currentTab === 'saved' ? (
+          <SavedOpportunitiesPage
+            onSelectOpportunity={handleSelectOpportunity}
+            onGoToDiscover={() => setCurrentTab('discover')}
+            onTrackApplication={handleTrackApplication}
+          />
+        ) : currentTab === 'applications' ? (
+          <ApplicationTrackerPage
+            onSelectOpportunity={handleSelectOpportunity}
+            onGoToDiscover={() => setCurrentTab('discover')}
+            initialAddOpportunityId={trackOppId}
+          />
         ) : null}
       </main>
 
@@ -163,6 +347,16 @@ export const App: React.FC = () => {
           </div>
         </div>
       </footer>
+
+      {/* Authentication Modal */}
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        initialMode={authModalMode}
+        onClose={() => setIsAuthModalOpen(false)}
+        onAuthSuccess={(account) => {
+          setCurrentUser(account);
+        }}
+      />
     </div>
   );
 };

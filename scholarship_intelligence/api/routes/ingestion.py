@@ -3,17 +3,12 @@ from typing import List
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
+from scholarship_intelligence.api.dependencies import get_db
 from scholarship_intelligence.api.schemas import IngestionRunItem, IngestionSourceItem
 from scholarship_intelligence.api.service import ApiService
-from scholarship_intelligence.db.session import get_db_session
 
 router = APIRouter(prefix="/ingestion", tags=["Ingestion"])
 service = ApiService()
-
-
-def get_db():
-    with get_db_session() as session:
-        yield session
 
 
 @router.get("/runs", response_model=List[IngestionRunItem])

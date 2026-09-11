@@ -302,3 +302,97 @@ export interface ComparisonResponse {
   academic_cycle: string;
   comparisons: OpportunityComparisonItem[];
 }
+
+export type ApplicationStatus =
+  | 'NOT_STARTED'
+  | 'PLANNING'
+  | 'IN_PROGRESS'
+  | 'SUBMITTED'
+  | 'WITHDRAWN'
+  | 'DECISION_RECEIVED';
+
+export interface StudentAccount {
+  id: string;
+  email: string;
+  is_active: boolean;
+  has_profile: boolean;
+  created_at: string;
+}
+
+export interface AuthResponse {
+  token: string;
+  token_type: string;
+  expires_at: string;
+  account: StudentAccount;
+}
+
+export interface SavedOpportunity {
+  id: string;
+  opportunity_id: string;
+  created_at: string;
+  opportunity: OpportunitySummary;
+}
+
+export interface PaginatedSavedOpportunities {
+  items: SavedOpportunity[];
+  total: number;
+  page: number;
+  page_size: number;
+  pages: number;
+}
+
+export interface ApplicationRecord {
+  id: string;
+  opportunity_id: string;
+  status: ApplicationStatus;
+  student_notes: string | null;
+  target_academic_cycle: string | null;
+  planned_submission_date: string | null;
+  actual_submission_date: string | null;
+  created_at: string;
+  updated_at: string;
+  opportunity: OpportunitySummary;
+}
+
+export interface PaginatedApplications {
+  items: ApplicationRecord[];
+  total: number;
+  page: number;
+  page_size: number;
+  pages: number;
+}
+
+export interface ComparisonSelectionItem {
+  id: string;
+  opportunity_id: string;
+  created_at: string;
+  opportunity: OpportunitySummary;
+}
+
+export interface PersistentComparisonResponse {
+  items: ComparisonSelectionItem[];
+  count: number;
+  max_limit: number;
+}
+
+export interface PersistentProfile {
+  account_id: string;
+  citizenship_country?: string | null;
+  residence_country?: string | null;
+  gpa?: number | null;
+  gpa_scale?: number | null;
+  current_education_level?: string | null;
+  target_degree_level?: string | null;
+  field_of_study?: string | null;
+  has_sat?: string;
+  sat_total?: number | null;
+  has_act?: string;
+  act_composite?: number | null;
+  demonstrates_financial_need?: string;
+  requires_visa?: string;
+  is_first_generation?: string;
+  gender?: string | null;
+  race_ethnicity?: string | null;
+  created_at: string;
+  updated_at: string;
+}

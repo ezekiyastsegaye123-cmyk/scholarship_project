@@ -5,7 +5,8 @@ Strict Privacy-by-Design & Data Minimization:
 - No profile vectors, embeddings, or recommendation match scores (deferred).
 - Uses portable JSON columns for structured lists.
 """
-from sqlalchemy import Column, Float, Integer, JSON, String
+from sqlalchemy import Column, Float, ForeignKey, Integer, JSON, String
+from sqlalchemy.orm import relationship
 
 from scholarship_intelligence.models.base import Base, TimestampMixin, generate_uuid
 
@@ -14,6 +15,10 @@ class StudentProfile(Base, TimestampMixin):
     __tablename__ = "student_profiles"
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
+    account_id = Column(String(36), ForeignKey("student_accounts.id", ondelete="CASCADE"), nullable=True, unique=True, index=True)
+
+    # Relationships
+    account = relationship("StudentAccount", back_populates="profile")
     
     # Required core demographic fields
     citizenship_country = Column(String(3), nullable=False, index=True)

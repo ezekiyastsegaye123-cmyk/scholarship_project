@@ -18,14 +18,23 @@ FORBIDDEN_PRIVACY_FIELDS = {
     "ssn",
     "social_security_number",
     "bank_account",
+    "bankAccount",
     "bank_routing",
     "credit_card",
+    "card_number",
     "cvv",
+    "tax_id",
+    "taxpayer_id",
     "tax_return_pdf",
     "national_id",
+    "passport",
+    "passport_number",
     "passport_scan",
     "profile_vector",
     "embedding",
+    "secret",
+    "api_key",
+    "private_key",
 }
 
 
@@ -231,3 +240,177 @@ class ComparisonResponse(BaseModel):
     items: List[ComparisonItem]
     ordering_rule: str = "Ordered by requested selection order, then earliest deadline, then title"
     total_compared: int
+
+
+# ==============================================================================
+# PHASE 4: ACCOUNTS, PERSISTENCE & PERSONALIZATION SCHEMAS
+# ==============================================================================
+
+class RegisterRequest(BaseModel):
+    """Account registration payload."""
+    email: str = Field(..., min_length=3, max_length=255)
+    password: str = Field(..., min_length=8, max_length=128)
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_forbidden_fields(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            for forbidden in FORBIDDEN_PRIVACY_FIELDS:
+                if forbidden in data and forbidden != "password":
+                    raise ValueError(f"Privacy violation: field '{forbidden}' is forbidden.")
+        return data
+
+
+class LoginRequest(BaseModel):
+    """Account authentication payload."""
+    email: str = Field(..., min_length=3, max_length=255)
+    password: str = Field(..., min_length=1, max_length=128)
+
+
+class StudentAccountItem(BaseModel):
+    """Safe authenticated student account identity."""
+    id: str
+    email: str
+    is_active: bool
+    created_at: datetime
+    last_login_at: Optional[datetime] = None
+    has_profile: bool = False
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AuthResponse(BaseModel):
+    """Authentication outcome with session bearer token."""
+    account: StudentAccountItem
+    token: str
+    expires_at: datetime
+
+
+class PersistentProfileResponse(BaseModel):
+    """Persistent student profile representation."""
+    id: str
+    account_id: Optional[str] = None
+    citizenship_country: str
+    residence_country: str
+    intended_degree_level: str
+    intended_destination_country: str
+    gpa: Optional[float] = None
+    gpa_scale: Optional[float] = 4.0
+    intended_major: Optional[str] = None
+    english_test_type: Optional[str] = None
+    english_test_score: Optional[float] = None
+    sat_score: Optional[int] = None
+    act_score: Optional[int] = None
+    financial_need_tier: Optional[str] = None
+    academic_achievements: List[str] = Field(default_factory=list)
+    extracurricular_activities: List[str] = Field(default_factory=list)
+    interests: List[str] = Field(default_factory=list)
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class PersistentProfileUpdate(BaseModel):
+    """Payload to update an authenticated student's persistent profile."""
+    citizenship_country: Optional[str] = Field(None, min_length=2, max_length=3)
+    residence_country: Optional[str] = Field(None, min_length=2, max_length=3)
+    intended_degree_level: Optional[str] = Field("BACHELOR")
+    intended_destination_country: Optional[str] = Field("US")
+    gpa: Optional[float] = Field(None, ge=0.0, le=100.0)
+    gpa_scale: Optional[float] = Field(4.0, ge=1.0, le=100.0)
+    intended_major: Optional[str] = None
+    english_test_type: Optional[str] = None
+    english_test_score: Optional[float] = None
+    sat_score: Optional[int] = Field(None, ge=400, le=1600)
+    act_score: Optional[int] = Field(None, ge=1, le=36)
+    financial_need_tier: Optional[str] = None
+    academic_achievements: Optional[List[str]] = None
+    extracurricular_activities: Optional[List[str]] = None
+    interests: Optional[List[str]] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_forbidden_privacy_fields(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            for forbidden in FORBIDDEN_PRIVACY_FIELDS:
+                if forbidden in data:
+                    raise ValueError(f"Privacy violation: field '{forbidden}' is strictly forbidden.")
+        return data
+
+
+class SavedOpportunityItem(BaseModel):
+    """Saved opportunity with current canonical intelligence."""
+    id: str
+    student_account_id: str
+    opportunity_id: str
+    saved_at: datetime
+    opportunity: OpportunitySummary
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class PaginatedSavedOpportunities(BaseModel):
+    """Pagination wrapper for saved scholarship list."""
+    items: List[SavedOpportunityItem]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+
+
+class ApplicationRecordCreate(BaseModel):
+    """Payload to track a scholarship application."""
+    opportunity_id: str = Field(..., min_length=1)
+    status: str = Field("NOT_STARTED", description="ApplicationStatus enum")
+    student_notes: Optional[str] = Field(None, max_length=5000)
+    submitted_at: Optional[datetime] = None
+
+
+class ApplicationRecordUpdate(BaseModel):
+    """Payload to update an existing application record."""
+    status: Optional[str] = None
+    student_notes: Optional[str] = Field(None, max_length=5000)
+    submitted_at: Optional[datetime] = None
+
+
+class ApplicationRecordItem(BaseModel):
+    """Application record item with current canonical intelligence."""
+    id: str
+    student_account_id: str
+    opportunity_id: str
+    status: str
+    student_notes: Optional[str] = None
+    submitted_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
+    opportunity: OpportunitySummary
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class PaginatedApplications(BaseModel):
+    """Pagination wrapper for application records."""
+    items: List[ApplicationRecordItem]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+
+
+class ComparisonSelectionItem(BaseModel):
+    """Persistent comparison selection item."""
+    id: str
+    opportunity_id: str
+    created_at: datetime
+    opportunity: OpportunitySummary
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class PersistentComparisonResponse(BaseModel):
+    """Persistent comparison set for an authenticated student."""
+    items: List[ComparisonSelectionItem]
+    count: int
+    max_allowed: int = 4
+

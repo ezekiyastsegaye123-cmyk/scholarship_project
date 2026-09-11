@@ -15,6 +15,10 @@ from scholarship_intelligence.models.verification_history import VerificationHis
 from scholarship_intelligence.models.source_liveness import SourceLivenessLog
 from scholarship_intelligence.models.ingestion_source import IngestionSource
 from scholarship_intelligence.models.ingestion_run import IngestionRun
+from scholarship_intelligence.models.student_account import StudentAccount
+from scholarship_intelligence.models.saved_opportunity import SavedOpportunity
+from scholarship_intelligence.models.application_record import ApplicationRecord
+from scholarship_intelligence.models.comparison_selection import ComparisonSelection
 
 __all__ = [
     "Base",
@@ -38,5 +42,10 @@ __all__ = [
     "SourceLivenessLog",
     "IngestionSource",
     "IngestionRun",
+    "StudentAccount",
+    "SavedOpportunity",
+    "ApplicationRecord",
+    "ComparisonSelection",
 ]
+
 

@@ -8,18 +8,13 @@ from scholarship_intelligence.api.schemas import (
     CounselRequest,
     EvaluationRequest,
 )
+from scholarship_intelligence.api.dependencies import get_db
 from scholarship_intelligence.api.service import ApiService
-from scholarship_intelligence.db.session import get_db_session
 from scholarship_intelligence.schemas.counselor import CounselorAssessmentResult
 from scholarship_intelligence.schemas.eligibility_eval import EligibilityEvaluationResult
 
 router = APIRouter(tags=["Evaluation & Counselor"])
 service = ApiService()
-
-
-def get_db():
-    with get_db_session() as session:
-        yield session
 
 
 @router.post("/opportunities/{opportunity_id}/evaluate", response_model=EligibilityEvaluationResult)

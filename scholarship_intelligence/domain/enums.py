@@ -216,3 +216,14 @@ class DeadlineReadiness(str, Enum):
     UPCOMING = "UPCOMING"
     CLOSED = "CLOSED"
     UNKNOWN = "UNKNOWN"
+
+
+class ApplicationStatus(str, Enum):
+    """Lifecycle tracking states for a student's scholarship application."""
+    NOT_STARTED = "NOT_STARTED"
+    PLANNING = "PLANNING"
+    IN_PROGRESS = "IN_PROGRESS"
+    SUBMITTED = "SUBMITTED"
+    WITHDRAWN = "WITHDRAWN"
+    DECISION_RECEIVED = "DECISION_RECEIVED"
+

@@ -45,14 +45,21 @@ def test_clean_alembic_migration():
             "student_profiles",
             "ingestion_sources",
             "ingestion_runs",
+            "student_accounts",
+            "saved_opportunities",
+            "application_records",
+            "comparison_selections",
         }
         assert expected_tables.issubset(table_names), f"Missing tables: {expected_tables - table_names}"
 
-        # Test downgrade
+        # Test downgrade Phase 4 -> Phase 3 (-1)
         command.downgrade(alembic_cfg, "-1")
         table_names_downgraded = set(inspect(engine).get_table_names())
-        assert "ingestion_sources" not in table_names_downgraded
-        assert "ingestion_runs" not in table_names_downgraded
+        assert "student_accounts" not in table_names_downgraded
+        assert "saved_opportunities" not in table_names_downgraded
+        assert "application_records" not in table_names_downgraded
+        assert "comparison_selections" not in table_names_downgraded
+        assert "ingestion_sources" in table_names_downgraded
 
         # Test re-upgrade to head
         command.upgrade(alembic_cfg, "head")

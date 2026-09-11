@@ -5,9 +5,35 @@ import type {
   EligibilityEvaluationResult,
   CounselorAssessmentResult,
   ComparisonResponse,
+  StudentAccount,
+  AuthResponse,
+  SavedOpportunity,
+  PaginatedSavedOpportunities,
+  ApplicationRecord,
+  PaginatedApplications,
+  ApplicationStatus,
+  PersistentComparisonResponse,
+  PersistentProfile,
 } from '../types';
 
 const API_BASE = '/api';
+
+let authToken: string | null = typeof window !== 'undefined' ? localStorage.getItem('scholarship_auth_token') : null;
+
+export function setAuthToken(token: string | null): void {
+  authToken = token;
+  if (typeof window !== 'undefined') {
+    if (token) {
+      localStorage.setItem('scholarship_auth_token', token);
+    } else {
+      localStorage.removeItem('scholarship_auth_token');
+    }
+  }
+}
+
+export function getAuthToken(): string | null {
+  return authToken;
+}
 
 export interface OpportunityFilterParams {
   search?: string;
@@ -35,26 +61,50 @@ export class ApiError extends Error {
 async function request<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const url = `${API_BASE}${endpoint}`;
   try {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...((options?.headers as Record<string, string>) || {}),
+    };
+
+    if (authToken && !headers['Authorization']) {
+      headers['Authorization'] = `Bearer ${authToken}`;
+    }
+
     const response = await fetch(url, {
       ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        ...options?.headers,
-      },
+      headers,
     });
 
     if (!response.ok) {
+      if (response.status === 401) {
+        setAuthToken(null);
+      }
+
       let errBody: any = null;
       try {
         errBody = await response.json();
       } catch {
         errBody = await response.text();
       }
-      throw new ApiError(
-        (errBody && errBody.detail) || `API request failed with HTTP ${response.status}`,
-        response.status,
-        errBody
-      );
+
+      let userMessage = 'An unexpected error occurred while communicating with the service.';
+      if (errBody && errBody.detail) {
+        userMessage = typeof errBody.detail === 'string' ? errBody.detail : JSON.stringify(errBody.detail);
+      } else if (response.status === 401) {
+        userMessage = 'Authentication required. Please sign in to access your saved scholarships and applications.';
+      } else if (response.status === 403) {
+        userMessage = 'You do not have authorization to perform this operation.';
+      } else if (response.status === 404) {
+        userMessage = 'The requested resource could not be found.';
+      } else if (response.status === 409) {
+        userMessage = 'A conflicting record already exists.';
+      } else if (response.status === 422) {
+        userMessage = 'The submitted data is invalid. Please review required fields.';
+      } else if (response.status >= 500) {
+        userMessage = 'A server error occurred. Please try again shortly.';
+      }
+
+      throw new ApiError(userMessage, response.status, errBody);
     }
 
     return (await response.json()) as T;
@@ -147,3 +197,167 @@ export async function compareOpportunities(
     }),
   });
 }
+
+// -----------------------------------------------------------------------------
+// AUTHENTICATION
+// -----------------------------------------------------------------------------
+
+export async function authRegister(email: string, password: string): Promise<AuthResponse> {
+  const data = await request<AuthResponse>('/auth/register', {
+    method: 'POST',
+    body: JSON.stringify({ email, password }),
+  });
+  setAuthToken(data.token);
+  return data;
+}
+
+export async function authLogin(email: string, password: string): Promise<AuthResponse> {
+  const data = await request<AuthResponse>('/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ email, password }),
+  });
+  setAuthToken(data.token);
+  return data;
+}
+
+export async function authLogout(): Promise<{ message: string }> {
+  try {
+    const res = await request<{ message: string }>('/auth/logout', {
+      method: 'POST',
+    });
+    setAuthToken(null);
+    return res;
+  } catch (err) {
+    setAuthToken(null);
+    return { message: 'Logged out successfully' };
+  }
+}
+
+export async function authMe(): Promise<StudentAccount> {
+  return request<StudentAccount>('/auth/me');
+}
+
+// -----------------------------------------------------------------------------
+// PERSISTENT STUDENT PROFILE
+// -----------------------------------------------------------------------------
+
+export async function fetchPersistentProfile(): Promise<PersistentProfile> {
+  return request<PersistentProfile>('/student-profile');
+}
+
+export async function updatePersistentProfile(profile: Partial<PersistentProfile>): Promise<PersistentProfile> {
+  return request<PersistentProfile>('/student-profile', {
+    method: 'PUT',
+    body: JSON.stringify(profile),
+  });
+}
+
+// -----------------------------------------------------------------------------
+// SAVED OPPORTUNITIES
+// -----------------------------------------------------------------------------
+
+export async function fetchSavedOpportunities(
+  page: number = 1,
+  pageSize: number = 20
+): Promise<PaginatedSavedOpportunities> {
+  return request<PaginatedSavedOpportunities>(`/saved-opportunities?page=${page}&page_size=${pageSize}`);
+}
+
+export async function saveOpportunity(opportunityId: string): Promise<SavedOpportunity> {
+  return request<SavedOpportunity>(`/saved-opportunities/${encodeURIComponent(opportunityId)}`, {
+    method: 'POST',
+  });
+}
+
+export async function unsaveOpportunity(opportunityId: string): Promise<{ message: string; opportunity_id: string }> {
+  return request<{ message: string; opportunity_id: string }>(
+    `/saved-opportunities/${encodeURIComponent(opportunityId)}`,
+    {
+      method: 'DELETE',
+    }
+  );
+}
+
+// -----------------------------------------------------------------------------
+// APPLICATION TRACKER
+// -----------------------------------------------------------------------------
+
+export interface ApplicationCreatePayload {
+  opportunity_id: string;
+  status?: ApplicationStatus;
+  student_notes?: string | null;
+  target_academic_cycle?: string | null;
+  planned_submission_date?: string | null;
+  actual_submission_date?: string | null;
+}
+
+export interface ApplicationUpdatePayload {
+  status?: ApplicationStatus;
+  student_notes?: string | null;
+  target_academic_cycle?: string | null;
+  planned_submission_date?: string | null;
+  actual_submission_date?: string | null;
+}
+
+export async function fetchApplications(
+  page: number = 1,
+  pageSize: number = 20,
+  status?: ApplicationStatus
+): Promise<PaginatedApplications> {
+  const query = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
+  if (status) query.set('status', status);
+  return request<PaginatedApplications>(`/applications?${query.toString()}`);
+}
+
+export async function createApplication(payload: ApplicationCreatePayload): Promise<ApplicationRecord> {
+  return request<ApplicationRecord>('/applications', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateApplication(
+  applicationId: string,
+  payload: ApplicationUpdatePayload
+): Promise<ApplicationRecord> {
+  return request<ApplicationRecord>(`/applications/${encodeURIComponent(applicationId)}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteApplication(applicationId: string): Promise<{ message: string; application_id: string }> {
+  return request<{ message: string; application_id: string }>(
+    `/applications/${encodeURIComponent(applicationId)}`,
+    {
+      method: 'DELETE',
+    }
+  );
+}
+
+// -----------------------------------------------------------------------------
+// PERSISTENT COMPARISON SELECTION
+// -----------------------------------------------------------------------------
+
+export async function fetchComparisonSelections(): Promise<PersistentComparisonResponse> {
+  return request<PersistentComparisonResponse>('/comparison');
+}
+
+export async function addComparisonSelection(opportunityId: string): Promise<PersistentComparisonResponse> {
+  return request<PersistentComparisonResponse>(`/comparison/${encodeURIComponent(opportunityId)}`, {
+    method: 'POST',
+  });
+}
+
+export async function removeComparisonSelection(opportunityId: string): Promise<PersistentComparisonResponse> {
+  return request<PersistentComparisonResponse>(`/comparison/${encodeURIComponent(opportunityId)}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function clearComparisonSelections(): Promise<PersistentComparisonResponse> {
+  return request<PersistentComparisonResponse>('/comparison', {
+    method: 'DELETE',
+  });
+}
+

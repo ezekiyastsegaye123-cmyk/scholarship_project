@@ -29,6 +29,8 @@ import {
   GraduationCap,
   Scale,
   Loader2,
+  Bookmark,
+  CheckCircle,
 } from 'lucide-react';
 
 interface OpportunityDetailPageProps {
@@ -38,6 +40,9 @@ interface OpportunityDetailPageProps {
   isCompared: boolean;
   onToggleCompare: (id: string) => void;
   onGoToProfile: () => void;
+  isSaved?: boolean;
+  onToggleSave?: (id: string) => void;
+  onTrackApplication?: (id: string) => void;
 }
 
 export const OpportunityDetailPage: React.FC<OpportunityDetailPageProps> = ({
@@ -47,6 +52,9 @@ export const OpportunityDetailPage: React.FC<OpportunityDetailPageProps> = ({
   isCompared,
   onToggleCompare,
   onGoToProfile,
+  isSaved,
+  onToggleSave,
+  onTrackApplication,
 }) => {
   const [opp, setOpp] = useState<OpportunityDetail | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -154,6 +162,26 @@ export const OpportunityDetailPage: React.FC<OpportunityDetailPageProps> = ({
             <Scale className="w-4 h-4 mr-1.5 inline" />
             {isCompared ? 'In Comparison' : 'Add to Comparison'}
           </button>
+          {onToggleSave && (
+            <button
+              type="button"
+              className={`btn-compare-action ${isSaved ? 'active' : ''}`}
+              onClick={() => onToggleSave(opp.id)}
+            >
+              <Bookmark className="w-4 h-4 mr-1.5 inline" />
+              {isSaved ? 'Saved' : 'Save'}
+            </button>
+          )}
+          {onTrackApplication && (
+            <button
+              type="button"
+              className="btn-secondary text-xs"
+              onClick={() => onTrackApplication(opp.id)}
+            >
+              <CheckCircle className="w-4 h-4 mr-1.5 inline" />
+              Track
+            </button>
+          )}
           {primarySource && (
             <a
               href={primarySource.url}
