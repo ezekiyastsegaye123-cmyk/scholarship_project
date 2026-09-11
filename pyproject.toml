@@ -7,13 +7,19 @@ name = "scholarship-intelligence"
 version = "0.1.0"
 description = "Scholarship Discovery, Verification & Counselor Platform - Phase 1A Data Foundation"
 authors = [{ name = "Data Architect & Engineering Team" }]
-readme = "README.md"
+readme = "docs/phase-1/README.md"
 requires-python = ">=3.11"
 dependencies = [
     "pydantic>=2.10.0",
     "sqlalchemy>=2.0.0",
     "alembic>=1.14.0",
+    "httpx>=0.27.0",
+    "beautifulsoup4>=4.12.0",
 ]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["scholarship_intelligence*"]
 
 [project.optional-dependencies]
 test = [
