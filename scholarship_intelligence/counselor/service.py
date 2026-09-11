@@ -35,6 +35,7 @@ from scholarship_intelligence.domain.enums import (
 )
 from scholarship_intelligence.schemas.counselor import (
     CounselorAssessmentResult,
+    DeadlineAssessmentContext,
     EvidenceReference,
     VerificationWarningContext,
 )
@@ -66,7 +67,21 @@ class ScholarshipCounselorService:
         test_ctx = assess_testing_readiness(student_profile, opportunity, eligibility_result)
         funding_ctx = assess_funding(opportunity)
         app_ctx = assess_application_readiness(student_profile, opportunity)
-        deadline_ctx = assess_deadlines(opportunity, reference_date=reference_date)
+        opp_deadlines = getattr(opportunity, "deadlines", []) or []
+        if reference_date is not None:
+            deadline_ctx = assess_deadlines(opportunity, reference_date=reference_date)
+        elif not opp_deadlines:
+            deadline_ctx = DeadlineAssessmentContext(
+                deadlines=[],
+                has_passed_deadline=False,
+                earliest_upcoming_deadline=None,
+                summary="No deadlines currently published for this opportunity.",
+            )
+        else:
+            raise ValueError(
+                "reference_date is required for deterministic deadline assessment when opportunity publishes deadlines; "
+                "machine-clock fallback is prohibited"
+            )
 
         # 2. Verification context
         v_status_raw = getattr(opportunity, "verification_status", VerificationState.UNVERIFIED.value)

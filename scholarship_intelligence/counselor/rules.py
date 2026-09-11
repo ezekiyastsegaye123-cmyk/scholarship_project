@@ -388,8 +388,34 @@ def assess_testing_readiness(
     )
 
 
+DISALLOWED_EVIDENCE_PLACEHOLDERS = {
+    "primary authoritative opportunity source",
+    "verified source",
+    "funding evidence",
+    "official source",
+    "official provider source",
+    "placeholder",
+    "none",
+    "null",
+    "n/a",
+    "unknown",
+}
+
+
+def is_genuine_evidence(snippet: Any) -> bool:
+    """Checks whether an evidence snippet is genuine and non-placeholder."""
+    if not isinstance(snippet, str):
+        return False
+    cleaned = snippet.strip()
+    if not cleaned:
+        return False
+    if cleaned.lower() in DISALLOWED_EVIDENCE_PLACEHOLDERS:
+        return False
+    return True
+
+
 def assess_funding(opportunity: Any) -> FundingAssessmentContext:
-    """Decomposes verified funding and enforces substantiated coverage for full funding invariant."""
+    """Decomposes verified funding and enforces substantiated coverage with genuine evidence for full funding."""
     award = getattr(opportunity, "award", None)
     classification = FundingClassification.UNKNOWN
     is_renewable = TriState.UNKNOWN
@@ -423,70 +449,91 @@ def assess_funding(opportunity: Any) -> FundingAssessmentContext:
         if isinstance(raw_components, list):
             components = raw_components
 
-    # Map component types
+    # Map component types and separate components by genuine evidence substantiation
     comp_types = set()
+    substantiated_comp_types = set()
     evidence: List[str] = []
+
     for c in components:
         raw_t = getattr(c, "component_type", None)
         if isinstance(raw_t, FundingComponentType):
-            comp_types.add(raw_t.value)
+            t_val = raw_t.value
         elif isinstance(raw_t, str):
-            comp_types.add(raw_t)
+            t_val = raw_t
+        else:
+            t_val = None
+
+        if t_val:
+            comp_types.add(t_val)
 
         snippet = getattr(c, "source_evidence_snippet", None)
-        if isinstance(snippet, str):
-            evidence.append(snippet)
+        if is_genuine_evidence(snippet):
+            if t_val:
+                substantiated_comp_types.add(t_val)
+            evidence.append(snippet.strip())
 
-    has_tuition = FundingComponentType.TUITION.value in comp_types
-    has_fees = FundingComponentType.MANDATORY_FEES.value in comp_types
-    has_room = FundingComponentType.ROOM.value in comp_types
-    has_meals = FundingComponentType.MEALS.value in comp_types
-    has_living = FundingComponentType.LIVING_EXPENSES.value in comp_types
-    has_stipend = FundingComponentType.STIPEND.value in comp_types
-    has_insurance = FundingComponentType.HEALTH_INSURANCE.value in comp_types
-    has_books = FundingComponentType.BOOKS.value in comp_types
-    has_travel = FundingComponentType.TRAVEL.value in comp_types
+    # Component existence
+    has_tuition_comp = FundingComponentType.TUITION.value in comp_types
+    has_room_comp = FundingComponentType.ROOM.value in comp_types
+    has_meals_comp = FundingComponentType.MEALS.value in comp_types
+    has_living_comp = FundingComponentType.LIVING_EXPENSES.value in comp_types
+    has_stipend_comp = FundingComponentType.STIPEND.value in comp_types
 
-    # Substantive living support requires room and board/meals, or verified comprehensive living expenses/stipend
-    has_comprehensive_living = (
-        (has_room and has_meals)
-        or has_living
-        or (has_stipend and (has_room or has_meals))
+    # Component substantiation (genuine supporting evidence required)
+    has_substantiated_tuition = FundingComponentType.TUITION.value in substantiated_comp_types
+    has_substantiated_room = FundingComponentType.ROOM.value in substantiated_comp_types
+    has_substantiated_meals = FundingComponentType.MEALS.value in substantiated_comp_types
+    has_substantiated_living = FundingComponentType.LIVING_EXPENSES.value in substantiated_comp_types
+    has_substantiated_stipend = FundingComponentType.STIPEND.value in substantiated_comp_types
+
+    # Substantive living support requires verified room and board/meals, or verified comprehensive living expenses/stipend
+    has_substantiated_comprehensive_living = (
+        (has_substantiated_room and has_substantiated_meals)
+        or has_substantiated_living
+        or (has_substantiated_stipend and (has_substantiated_room or has_substantiated_meals))
     )
 
-    tuition = TriState.YES if has_tuition else TriState.UNKNOWN
-    fees = TriState.YES if has_fees else TriState.UNKNOWN
-    room = TriState.YES if has_room else TriState.UNKNOWN
-    meals = TriState.YES if has_meals else TriState.UNKNOWN
-    living = TriState.YES if (has_living or (has_room and has_meals)) else TriState.UNKNOWN
-    stipend = TriState.YES if has_stipend else TriState.UNKNOWN
-    insurance = TriState.YES if has_insurance else TriState.UNKNOWN
-    books = TriState.YES if has_books else TriState.UNKNOWN
-    travel = TriState.YES if has_travel else TriState.UNKNOWN
+    tuition = TriState.YES if has_substantiated_tuition else TriState.UNKNOWN
+    fees = TriState.YES if FundingComponentType.MANDATORY_FEES.value in substantiated_comp_types else TriState.UNKNOWN
+    room = TriState.YES if has_substantiated_room else TriState.UNKNOWN
+    meals = TriState.YES if has_substantiated_meals else TriState.UNKNOWN
+    living = TriState.YES if (has_substantiated_living or (has_substantiated_room and has_substantiated_meals)) else TriState.UNKNOWN
+    stipend = TriState.YES if has_substantiated_stipend else TriState.UNKNOWN
+    insurance = TriState.YES if FundingComponentType.HEALTH_INSURANCE.value in substantiated_comp_types else TriState.UNKNOWN
+    books = TriState.YES if FundingComponentType.BOOKS.value in substantiated_comp_types else TriState.UNKNOWN
+    travel = TriState.YES if FundingComponentType.TRAVEL.value in substantiated_comp_types else TriState.UNKNOWN
 
     details: List[str] = []
 
-    # Strict Invariant: Full Tuition != Full Funding & FULL_FUNDING must be substantiated
+    # Strict Invariant: Full Funding requires verified tuition evidence AND verified comprehensive living evidence
     if classification == FundingClassification.FULL_FUNDING:
-        if has_tuition and has_comprehensive_living:
+        if has_substantiated_tuition and has_substantiated_comprehensive_living:
             summary = "Full funding: Verified coverage includes tuition as well as living, room, and board expenses."
-            details.append("Covers full cost of attendance including tuition and living expenses.")
-        elif has_tuition:
-            # Downgrade label from FULL_FUNDING to FULL_TUITION because components do not substantiate full living coverage
+            details.append("Covers full cost of attendance including tuition and living expenses substantiated by official evidence.")
+        elif has_substantiated_tuition:
+            # Downgrade label from FULL_FUNDING to FULL_TUITION because living components lack genuine evidence
             classification = FundingClassification.FULL_TUITION
             summary = "Full tuition only: Tuition is covered. Room, meals, and living expenses are NOT verified as covered; student must plan for living costs."
-            details.append("Provider award is labeled full funding, but verified components do not substantiate comprehensive room and meal expenses.")
+            details.append("Provider award is labeled full funding, but verified components do not substantiate comprehensive room and meal expenses with genuine evidence.")
+        elif has_tuition_comp and (has_room_comp or has_meals_comp or has_living_comp):
+            # Components exist but lack genuine evidence (missing or placeholder)
+            classification = FundingClassification.PARTIAL_FUNDING
+            summary = "Unconfirmed full funding: Award components are listed but lack genuine source evidence to substantiate tuition and living coverage."
+            details.append("Award components (tuition/living) are unevidenced or cite placeholder text; direct verification with provider required.")
         else:
             classification = FundingClassification.PARTIAL_FUNDING
             summary = "Partial funding: Coverage components do not substantiate complete tuition and living costs."
             details.append("Award components are incomplete or unverified.")
     elif classification == FundingClassification.FULL_TUITION:
         summary = "Full tuition only: Tuition is covered. Room, meals, and living expenses are NOT verified as covered; student must plan for living costs."
-        details.append("Covers 100% tuition. Living, housing, and meal expenses are unconfirmed or student-funded.")
+        if has_substantiated_tuition:
+            details.append("Covers 100% tuition. Living, housing, and meal expenses are unconfirmed or student-funded.")
+        else:
+            details.append("Tuition coverage is unevidenced or missing supporting source excerpts.")
     elif classification == FundingClassification.PARTIAL_FUNDING:
         summary = "Partial funding: Provides a partial contribution toward tuition or attendance costs."
         details.append("Student must secure remaining institutional or private funds.")
-    elif has_tuition and not has_comprehensive_living:
+    elif has_substantiated_tuition and not has_substantiated_comprehensive_living:
         summary = "Tuition coverage indicated: Room, meals, and living expenses are NOT verified as covered; student must plan for living costs."
         details.append("Tuition covered. Living, housing, and meal expenses are unconfirmed or student-funded.")
     else:
@@ -619,8 +666,15 @@ def assess_deadlines(
     opportunity: Any,
     reference_date: Optional[date] = None,
 ) -> DeadlineAssessmentContext:
-    """Evaluates multiple distinct deadlines with deterministic closing-soon threshold (14 days)."""
-    ref_date = reference_date or date.today()
+    """Evaluates multiple distinct deadlines with deterministic closing-soon threshold (14 days).
+
+    Raises:
+        ValueError: If reference_date is missing or not a date. Silent fallback
+            to machine clock (date.today()) is strictly prohibited.
+    """
+    if reference_date is None or not isinstance(reference_date, date):
+        raise ValueError("reference_date is required for deterministic deadline assessment; machine-clock fallback is prohibited")
+    ref_date = reference_date
     deadlines = getattr(opportunity, "deadlines", [])
     if not isinstance(deadlines, list):
         deadlines = []

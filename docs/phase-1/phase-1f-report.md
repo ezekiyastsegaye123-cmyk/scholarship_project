@@ -29,13 +29,15 @@ PHASE 1F: BENCHMARK, STRESS & FINAL PHASE 1 EVALUATION (VALIDATION COMPLETE)
 The system was evaluated under strict conditions of functional correctness, epistemic safety, determinism, adversarial resilience, source traceability, and performance under stress load.
 
 ### Key Validation Outcomes:
-- **Test Suite Coverage:** 238 passed automated tests across 39 test modules (182 pre-existing + 56 newly authored Phase 1F validation tests) running in 3.55s.
+- **Test Suite Coverage:** 247 passed automated tests across 40 test modules (182 pre-existing + 56 Phase 1F initial validation + 9 Phase 1F final hardening tests) running in ~6.4s.
 - **Benchmark Evaluation:** All 22 comprehensive benchmarks (Benchmark A through Benchmark V) pass unconditionally.
+- **Full Funding Evidence Invariant:** `FULL_FUNDING` strictly requires genuine supporting evidence for both tuition and comprehensive living support (room + meals, or living stipend); unevidenced or placeholder snippets are rejected.
+- **Strict Machine-Clock Elimination:** Zero calls to `date.today()` in counselor logic; deadline evaluation strictly requires an explicit `reference_date: date` and raises `ValueError` if missing.
 - **Epistemic Invariants:** `UNKNOWN != NO`, `UNKNOWN != YES`, `UNKNOWN != NOT_APPLICABLE`, `UNKNOWN != INELIGIBLE`, `CONFLICTING != NO`, `CONFLICTING != YES`, `CONFLICTING != VERIFIED` are strictly preserved across all evaluators and counselor dimensions.
 - **Contract Preservation:** Phase 1E preserves Phase 1D eligibility statuses (`ELIGIBLE`, `INELIGIBLE`, `NEEDS_INFORMATION`, `GATED_UNVERIFIED`, `NEEDS_REVIEW`, `OUTDATED_CYCLE`) with 100% fidelity.
 - **Verification Gating:** All 7 verification states (`VERIFIED`, `PARTIALLY_VERIFIED`, `CONFLICTING`, `OUTDATED`, `UNVERIFIED`, `SOURCE_UNAVAILABLE`, `QUARANTINED_FOR_REVIEW`) are surfaced with transparent warnings and mandatory gates.
 - **Stress & Throughput:** 250 end-to-end evaluations across 50 synthetic opportunities and 5 diverse student profiles executed in 0.43s (~1.7ms per evaluation), demonstrating high throughput, zero memory leaks, and complete determinism.
-- **Static Security Audit:** Clean AST inspection confirms zero instances of `eval`, `exec`, `compile`, `__import__`, zero LLM/vector dependencies, and zero prohibited score concepts (`match_score`, `fit_score`, `acceptance_probability`, etc.).
+- **Static Security Audit:** Clean AST inspection confirms zero instances of `eval`, `exec`, `compile`, `__import__`, zero LLM/vector dependencies, zero prohibited score attributes (`match_score`, `fit_score`, `acceptance_probability`, etc.), and zero machine clock calls.
 
 ---
 
@@ -45,9 +47,10 @@ The system was evaluated under strict conditions of functional correctness, epis
 Repository: https://github.com/ezekiyastsegaye123-cmyk/scholarship_project
 Current Branch: main
 Baseline Approved Commit: 3759b36
-Existing Test Count: 182 passed tests
-New Tests Added: 56 passed tests
-Total Test Count: 238 passed tests (100% passing)
+Existing Test Count (pre-Phase 1F): 182 passed tests
+Phase 1F Validation Tests: 56 passed tests
+Phase 1F Hardening Tests: 9 passed tests
+Total Test Count: 247 passed tests (100% passing)
 ```
 
 ### Phase Milestones Verified:
@@ -202,7 +205,7 @@ Every Phase 1C verification state is handled with strict transparency:
 
 Retained and verified 100-run determinism tests in `tests/test_counselor_determinism.py` and `tests/test_evaluator_determinism.py`:
 - 100 consecutive runs of identical inputs produce bitwise identical JSON representations.
-- Zero machine clock dependence (`reference_date` injection throughout).
+- **Strict Machine-Clock Elimination:** Production implementation contains zero calls to `date.today()`. `assess_deadlines()` strictly requires `reference_date: date` and raises a `ValueError` validation error if omitted or None. In `ScholarshipCounselorService.assess_opportunity()`, when deadlines are published, omitting `reference_date` raises an explicit `ValueError`. Machine clock fallback is strictly prohibited.
 - Zero non-deterministic dictionary iteration.
 - Zero non-deterministic random IDs or seeds.
 
@@ -213,7 +216,7 @@ Retained and verified 100-run determinism tests in `tests/test_counselor_determi
 Static inspection confirmed complete compliance with security and architectural constraints:
 - **Dynamic Code Execution:** Zero instances of `eval()`, `exec()`, `compile()`, or `__import__()` in business logic.
 - **External AI Dependencies:** Zero imports of `openai`, `anthropic`, `google.generativeai`, `langchain`, or `llama_index`.
-- **Prohibited Scores:** Zero occurrences of `match_score`, `fit_score`, `competitiveness_score`, `readiness_score`, `confidence_score`, `trust_score`, or `acceptance_probability` across all schemas, evaluators, and counselors.
+- **Prohibited Scoring Logic and Attributes:** Confirmed that zero numerical score attributes (`match_score`, `fit_score`, `competitiveness_score`, `readiness_score`, `confidence_score`, `trust_score`, `acceptance_probability`) exist in data models or schemas, and zero numerical ranking or scoring algorithms exist in business logic. (Textual mentions in code are strictly limited to architectural prohibition statements and safety audit lists).
 - **Prohibited Cutoffs:** Zero hardcoded heuristics (`3.5`, `3.8`, `1400`, `30`, `0.2`) in the counselor codebase.
 
 ---
@@ -240,20 +243,21 @@ Located in `tests/test_phase_1f_stress.py`:
 
 ## 13. Regression Results
 
-All 182 tests authored across Phases 1A, 1B, 1C, 1D, and 1E continue to pass without modification or weakening:
+All 182 pre-existing tests authored across Phases 1A, 1B, 1C, 1D, and 1E continue to pass without modification or weakening:
 - Phase 1A Data Foundation: 18 passed tests
 - Phase 1B Ingestion & Normalization: 24 passed tests
 - Phase 1C Verification & Provenance: 34 passed tests
 - Phase 1D Eligibility Evaluator: 48 passed tests
 - Phase 1E Qualitative Counselor: 58 passed tests
-- Phase 1F Benchmark & Stress Suite: 56 passed tests
-- **Total Passing Tests:** **238 passed tests in 3.55s**.
+- Phase 1F Benchmark & Invariant Suite: 56 passed tests
+- Phase 1F Final Hardening Suite: 9 passed tests
+- **Total Passing Tests:** **247 passed tests in ~6.4s** (`python -m pytest -q`).
 
 ---
 
 ## 14. Defects Found & Calibrated
 
-During Phase 1F benchmark and stress execution, three minor integration defects were identified, fixed, and covered with regression tests:
+During Phase 1F benchmark, stress, and hardening execution, five integration and semantic defects were identified, fixed, and covered with regression tests:
 
 ### Defect 1: Verification Context Omitted Entity-Level Partially Verified State
 - **Root Cause:** `contains_unverified` checked only `eligibility_result.evaluation_contains_unverified_facts`, missing cases where the opportunity entity itself was marked `PARTIALLY_VERIFIED`.
@@ -272,6 +276,18 @@ During Phase 1F benchmark and stress execution, three minor integration defects 
 - **Severity:** Low (Adversarial Robustness).
 - **Fix:** In `scholarship_intelligence/counselor/service.py`, updated `opp_title = getattr(opportunity, "title", None) or "Scholarship Opportunity"`.
 - **Regression Test:** `tests/test_phase_1f_adversarial.py::test_adversarial_opportunity_all_none_relations`.
+
+### Defect 4: Machine-Clock Dependency in Deadline Assessment
+- **Root Cause:** `assess_deadlines()` had `ref_date = reference_date or date.today()`, allowing silent non-deterministic fallback when callers omitted `reference_date`.
+- **Severity:** High (Determinism Invariant).
+- **Fix:** Removed all calls to `date.today()`. Enforced mandatory `reference_date: date` in `assess_deadlines()` with explicit `ValueError` validation error if omitted or None. In `ScholarshipCounselorService.assess_opportunity()`, omitting `reference_date` when deadlines exist raises an explicit `ValueError`.
+- **Regression Test:** `tests/test_phase_1f_hardening.py::test_7_missing_reference_date_cannot_silently_use_date_today` and `test_8_zero_date_today_calls_in_counselor_codebase`.
+
+### Defect 5: FULL_FUNDING Allowed Unsubstantiated / Placeholder Evidence
+- **Root Cause:** `assess_funding()` checked component existence without distinguishing component existence from genuine evidence substantiation.
+- **Severity:** High (Epistemic Contract).
+- **Fix:** Created `is_genuine_evidence()` rejecting `None`, empty strings, and known placeholder strings (`"Primary authoritative opportunity source"`, `"Verified source"`, `"Funding evidence"`, `"Official source"`). If living support lacks genuine evidence, `FULL_FUNDING` is downgraded to `FULL_TUITION`. If components are unevidenced or placeholder-only, `FULL_FUNDING` is downgraded to `PARTIAL_FUNDING` with an unconfirmed full funding warning.
+- **Regression Test:** `tests/test_phase_1f_hardening.py::test_1_full_funding_with_genuine_tuition_and_living_evidence`, `test_2_full_funding_label_with_tuition_evidence_but_no_living_evidence_downgrades`, `test_3_full_funding_with_components_but_all_evidence_missing_rejected`, `test_4_full_funding_with_placeholder_evidence_rejected`.
 
 ---
 
