@@ -56,6 +56,10 @@ from scholarship_intelligence.schemas.eligibility_eval import (
     RuleEvaluationResult,
 )
 
+from scholarship_intelligence.schemas.counselor import (
+    CounselorAssessmentResult,
+)
+
 __all__ = [
     "ProviderBase", "ProviderCreate", "ProviderRead",
     "UniversityBase", "UniversityCreate", "UniversityRead",
@@ -72,4 +76,5 @@ __all__ = [
     "ScholarshipOpportunityBase", "ScholarshipOpportunityCreate", "ScholarshipOpportunityRead",
     "StudentProfileBase", "StudentProfileCreate", "StudentProfileRead",
     "EligibilityStatus", "RuleEvaluationResult", "EligibilityEvaluationResult",
+    "CounselorAssessmentResult",
 ]

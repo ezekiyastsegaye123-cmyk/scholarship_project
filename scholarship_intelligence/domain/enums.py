@@ -178,3 +178,41 @@ class NeedPolicy(str, Enum):
     NEED_AWARE_INTERNATIONAL = "NEED_AWARE_INTERNATIONAL"
     NO_AID_INTERNATIONAL = "NO_AID_INTERNATIONAL"
     UNKNOWN = "UNKNOWN"
+
+
+class AlignmentLevel(str, Enum):
+    """Qualitative assessment of student alignment with published criteria.
+    
+    Meanings:
+    - STRONG: Clear alignment based on verified evidence.
+    - MODERATE: Some alignment, but minor gaps or partial data exist.
+    - LIMITED: Meaningful gaps relative to published criteria.
+    - UNKNOWN: Insufficient verified information to assess.
+    - NOT_ASSESSABLE: Criterion cannot responsibly be assessed from available data.
+    """
+    STRONG = "STRONG"
+    MODERATE = "MODERATE"
+    LIMITED = "LIMITED"
+    UNKNOWN = "UNKNOWN"
+    NOT_ASSESSABLE = "NOT_ASSESSABLE"
+
+
+class ReadinessLevel(str, Enum):
+    """Qualitative application preparation status.
+    
+    NOT a prediction of admission or award success.
+    """
+    READY = "READY"
+    PARTIALLY_READY = "PARTIALLY_READY"
+    NEEDS_PREPARATION = "NEEDS_PREPARATION"
+    UNKNOWN = "UNKNOWN"
+    NOT_APPLICABLE = "NOT_APPLICABLE"
+
+
+class DeadlineReadiness(str, Enum):
+    """Status of application and financial aid deadlines relative to evaluation date."""
+    OPEN = "OPEN"
+    CLOSING_SOON = "CLOSING_SOON"  # Within 14 days
+    UPCOMING = "UPCOMING"
+    CLOSED = "CLOSED"
+    UNKNOWN = "UNKNOWN"

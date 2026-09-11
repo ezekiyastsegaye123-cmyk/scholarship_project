@@ -2,7 +2,7 @@
 
 **Project:** Scholarship Discovery, Verification & Counselor Platform  
 **Governing Standard:** `Antigravity Phase 0 — Skills-Aware Addendum.md` & Phase 1 Prompts  
-**Active Sub-Phase:** Phase 1D Complete (`READY_FOR_PHASE_1E` — Awaiting Phase 1E Gate Authorization)  
+**Active Sub-Phase:** Phase 1E Complete (`READY_FOR_PHASE_1F` — Awaiting Phase 1F Gate Authorization)  
 
 ---
 
@@ -17,8 +17,8 @@ flowchart LR
     P1A["Phase 1A<br/>Data Foundation & Schemas<br/>(COMPLETED ✅)"] --> P1B["Phase 1B<br/>Polite Ingestion Runner<br/>& HTML Normalizer<br/>(COMPLETED ✅)"]
     P1B --> P1C["Phase 1C<br/>Verification, Provenance,<br/>Liveness & Conflict Engine<br/>(COMPLETED ✅)"]
     P1C --> P1D["Phase 1D<br/>Deterministic Rule<br/>& Constraint Evaluator<br/>(COMPLETED ✅)"]
-    P1D --> P1E["Phase 1E<br/>Qualitative Counselor<br/>AI Module<br/>(NEXT GATE)"]
-    P1E --> P1F["Phase 1F<br/>Behavioral Benchmark<br/>& Test Validation"]
+    P1D --> P1E["Phase 1E<br/>Qualitative Counselor<br/>Module<br/>(COMPLETED ✅)"]
+    P1E --> P1F["Phase 1F<br/>Behavioral Benchmark<br/>& Test Validation<br/>(NEXT GATE)"]
 ```
 
 ---
@@ -57,11 +57,20 @@ flowchart LR
 6. **Deterministic Explanations:** Template-based explanations citing rule IDs, requirements, student actual values, and source evidence quotes.
 7. **143/143 Passing Tests:** 41 dedicated Phase 1D tests + 102 prior tests passing with zero regressions.
 
+### Phase 1E: Qualitative Scholarship Counselor Module (COMPLETED ✅)
+1. **Deterministic Qualitative Counselor:** Transparent guidance on strengths, gaps, missing information, application readiness, and actionable next steps.
+2. **Strict Conceptual Separation:** `Eligibility != Competitiveness != Fit != Readiness`. Zero conflation into a single score.
+3. **Zero Numerical Scoring or Probabilities:** Complete ban on `fit_score`, `match_score`, `competitiveness_score`, rankings, and acceptance chances.
+4. **Full Tuition != Full Funding Invariant:** If room, meals, and living expenses are not verified, awards are labeled `FULL_TUITION` with a mandatory living cost warning.
+5. **Preservation of UNKNOWN:** Missing facts or unstated requirements remain `UNKNOWN` rather than negative assumptions.
+6. **Multi-Deadline Assessment:** Distinct application and financial aid deadlines evaluated independently with a 14-day deterministic closing-soon threshold.
+7. **Source-Aware Provenance:** Evidence quotes and authority tiers attached to every factual assertion.
+8. **172/172 Passing Tests:** 29 dedicated Phase 1E tests (including 8 golden test cases, 100-run determinism test, and AST security audit) + 143 prior tests passing with zero regressions.
+
 ---
 
-## 3. Upcoming Sub-Phases (1E – 1F)
+## 3. Upcoming Sub-Phase (1F)
 
-- **Phase 1E (Qualitative Counselor Module):** 5-dimensional qualitative evaluation (Eligibility, Fit, Competitiveness, Readiness, Confidence) without fake numerical precision.
 - **Phase 1F (Comprehensive Verification & Benchmarking):** Execution of formal specification test cases and empirical latency benchmarking over the seed dataset.
 
 ---
