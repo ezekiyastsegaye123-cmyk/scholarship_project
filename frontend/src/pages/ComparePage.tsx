@@ -25,6 +25,8 @@ export const ComparePage: React.FC<ComparePageProps> = ({
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
+  const comparisons: any[] = data ? ((data as any).comparisons || (data as any).items || []) : [];
+
   useEffect(() => {
     if (opportunityIds.length === 0) {
       setData(null);
@@ -111,7 +113,7 @@ export const ComparePage: React.FC<ComparePageProps> = ({
             Return to Discover
           </button>
         </div>
-      ) : !data || data.comparisons.length === 0 ? (
+      ) : !data || comparisons.length === 0 ? (
         <div className="state-container empty-state mt-6">
           <p className="text-sm text-gray-500">No comparison data available.</p>
         </div>
@@ -121,7 +123,7 @@ export const ComparePage: React.FC<ComparePageProps> = ({
             <thead>
               <tr>
                 <th className="feature-col">Dimension</th>
-                {data.comparisons.map((c) => (
+                {comparisons.map((c) => (
                   <th key={c.opportunity_id} className="opp-header-col">
                     <div className="flex items-start justify-between gap-2">
                       <button
@@ -129,20 +131,20 @@ export const ComparePage: React.FC<ComparePageProps> = ({
                         className="opp-col-title"
                         onClick={() => onSelectOpportunity(c.opportunity_id)}
                       >
-                        {c.title}
+                        {c.title || c.opportunity_title}
                       </button>
                       <button
                         type="button"
                         className="remove-col-btn"
                         onClick={() => onRemoveFromCompare(c.opportunity_id)}
                         title="Remove from comparison"
-                        aria-label={`Remove ${c.title}`}
+                        aria-label={`Remove ${c.title || c.opportunity_title}`}
                       >
                         ×
                       </button>
                     </div>
                     <div className="text-xs text-gray-500 font-normal mt-1">
-                      {c.provider} {c.university ? `• ${c.university}` : ''}
+                      {c.provider || c.provider_name || ''} {(c.university || c.university_name) ? `• ${c.university || c.university_name}` : ''}
                     </div>
                   </th>
                 ))}
@@ -152,7 +154,7 @@ export const ComparePage: React.FC<ComparePageProps> = ({
               {/* Row: Verification */}
               <tr>
                 <td className="feature-name">Verification Status</td>
-                {data.comparisons.map((c) => (
+                {comparisons.map((c) => (
                   <td key={c.opportunity_id}>
                     <VerificationBadge state={c.verification_status as any} />
                   </td>
@@ -162,7 +164,7 @@ export const ComparePage: React.FC<ComparePageProps> = ({
               {/* Row: Funding Classification */}
               <tr>
                 <td className="feature-name">Funding Coverage</td>
-                {data.comparisons.map((c) => (
+                {comparisons.map((c) => (
                   <td key={c.opportunity_id}>
                     <FundingBadge classification={c.funding_classification as any} />
                   </td>
@@ -172,7 +174,7 @@ export const ComparePage: React.FC<ComparePageProps> = ({
               {/* Row: Earliest Deadline */}
               <tr>
                 <td className="feature-name">Earliest Deadline</td>
-                {data.comparisons.map((c) => (
+                {comparisons.map((c) => (
                   <td key={c.opportunity_id}>
                     <span className="font-medium text-gray-800">
                       {c.earliest_deadline ? new Date(c.earliest_deadline).toLocaleDateString() : 'Unavailable'}
@@ -185,7 +187,7 @@ export const ComparePage: React.FC<ComparePageProps> = ({
               {/* Row: Deterministic Eligibility */}
               <tr>
                 <td className="feature-name">Profile Eligibility</td>
-                {data.comparisons.map((c) => (
+                {comparisons.map((c) => (
                   <td key={c.opportunity_id}>
                     <EligibilityBadge status={c.eligibility_status || 'Not Evaluated'} />
                   </td>
@@ -195,7 +197,7 @@ export const ComparePage: React.FC<ComparePageProps> = ({
               {/* Row: Academic Alignment */}
               <tr>
                 <td className="feature-name">Academic Alignment</td>
-                {data.comparisons.map((c) => (
+                {comparisons.map((c) => (
                   <td key={c.opportunity_id}>
                     <span className="font-semibold text-xs text-brand">
                       {c.academic_alignment || 'NOT_ASSESSABLE'}
@@ -207,7 +209,7 @@ export const ComparePage: React.FC<ComparePageProps> = ({
               {/* Row: Geographic Alignment */}
               <tr>
                 <td className="feature-name">Geographic Alignment</td>
-                {data.comparisons.map((c) => (
+                {comparisons.map((c) => (
                   <td key={c.opportunity_id}>
                     <span className="font-semibold text-xs text-brand">
                       {c.geographic_alignment || 'UNKNOWN'}
@@ -219,7 +221,7 @@ export const ComparePage: React.FC<ComparePageProps> = ({
               {/* Row: Application Readiness */}
               <tr>
                 <td className="feature-name">Application Readiness</td>
-                {data.comparisons.map((c) => (
+                {comparisons.map((c) => (
                   <td key={c.opportunity_id}>
                     <span className="font-semibold text-xs text-gray-800">
                       {c.application_readiness || 'LIMITED'}
@@ -231,7 +233,7 @@ export const ComparePage: React.FC<ComparePageProps> = ({
               {/* Row: Primary Source */}
               <tr>
                 <td className="feature-name">Official Source</td>
-                {data.comparisons.map((c) => (
+                {comparisons.map((c) => (
                   <td key={c.opportunity_id}>
                     {c.primary_source_url ? (
                       <a
@@ -252,7 +254,7 @@ export const ComparePage: React.FC<ComparePageProps> = ({
               {/* Row: Actions */}
               <tr>
                 <td className="feature-name">Action</td>
-                {data.comparisons.map((c) => (
+                {comparisons.map((c) => (
                   <td key={c.opportunity_id}>
                     <button
                       type="button"

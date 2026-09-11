@@ -65,10 +65,12 @@ export const OpportunityCard: React.FC<OpportunityCardProps> = ({
         </h3>
 
         <div className="opp-entities">
-          <span className="opp-entity">
-            <Building2 className="w-3.5 h-3.5 inline mr-1 text-gray-500" />
-            {opportunity.provider_name}
-          </span>
+          {opportunity.provider_name && (
+            <span className="opp-entity">
+              <Building2 className="w-3.5 h-3.5 inline mr-1 text-gray-500" />
+              {opportunity.provider_name}
+            </span>
+          )}
           {opportunity.university_name && (
             <span className="opp-entity">
               <GraduationCap className="w-3.5 h-3.5 inline mr-1 text-gray-500" />
@@ -103,7 +105,9 @@ export const OpportunityCard: React.FC<OpportunityCardProps> = ({
               <Globe className="w-3.5 h-3.5 inline mr-1 text-gray-500" />
               Degree Level
             </span>
-            <span className="detail-value">{opportunity.degree_level.replace('_', ' ')}</span>
+            <span className="detail-value">
+              {(opportunity.target_degree_level || opportunity.degree_level || 'UNDERGRADUATE').replace('_', ' ')}
+            </span>
           </div>
         </div>
 

@@ -45,7 +45,8 @@ export interface OpportunitySummary {
   title: string;
   provider_name: string;
   university_name: string | null;
-  degree_level: string;
+  target_degree_level: string;
+  degree_level?: string;
   destination_country: string;
   academic_cycle: string;
   verification_status: VerificationState;
@@ -70,6 +71,7 @@ export interface PaginatedOpportunities {
   page: number;
   page_size: number;
   pages: number;
+  total_pages?: number;
 }
 
 export interface FundingComponent {
@@ -239,54 +241,78 @@ export interface StudentProfile {
 
 export interface RuleEvaluationResult {
   rule_id: string;
-  rule_kind: string;
-  satisfied: boolean | null;
+  rule_kind?: string;
+  kind?: string;
+  satisfied?: boolean | null;
   status: string;
-  field_name: string;
-  comparison_operator: string;
-  expected_value: any;
-  actual_value: any;
-  is_verified: boolean;
+  field_name?: string;
+  field?: string;
+  comparison_operator?: string;
+  expected_value?: any;
+  actual_value?: any;
+  is_verified?: boolean;
   explanation: string;
-  evidence_snippet: string | null;
+  evidence_snippet?: string | null;
 }
 
 export interface EligibilityEvaluationResult {
-  opportunity_id: string;
-  verification_status: string;
+  opportunity_id?: string;
+  opportunity_title?: string;
+  verification_status?: string;
   is_gated: boolean;
   status: EligibilityStatus;
-  rule_results: RuleEvaluationResult[];
-  explanation: string;
+  rule_results?: RuleEvaluationResult[];
+  satisfied_rules?: RuleEvaluationResult[];
+  failed_rules?: RuleEvaluationResult[];
+  unknown_rules?: RuleEvaluationResult[];
+  conflicting_rules?: RuleEvaluationResult[];
+  not_applicable_rules?: RuleEvaluationResult[];
+  supplementary_rules?: RuleEvaluationResult[];
+  explanation?: string;
+  explanations?: string[];
   evaluation_contains_unverified_facts: boolean;
   evaluated_at: string;
 }
 
 export interface CounselorAssessmentResult {
-  opportunity_id: string;
-  academic_cycle: string;
-  academic_alignment: string;
-  geographic_alignment: string;
-  funding_understanding: string;
-  deadline_assessment: {
-    status: string;
-    earliest_deadline: string | null;
-    is_urgent: boolean;
-    explanation: string;
+  opportunity_id?: string;
+  opportunity_title?: string;
+  academic_cycle?: string;
+  academic_alignment: string | { level: string; details?: string[] };
+  geographic_alignment: string | { level: string; details?: string[] };
+  funding_understanding?: string;
+  funding_assessment?: {
+    summary?: string;
+    funding_classification?: string;
+    details?: string[];
+    [key: string]: any;
   };
-  application_readiness: string;
+  deadline_assessment?: {
+    status?: string;
+    summary?: string;
+    earliest_deadline?: string | null;
+    is_urgent?: boolean;
+    explanation?: string;
+    [key: string]: any;
+  };
+  application_readiness: string | { level: string; details?: string[] };
   strengths: string[];
   gaps: string[];
-  uncertainties: string[];
-  recommended_actions: string[];
+  uncertainties?: string[];
+  unknowns?: string[];
+  recommended_actions?: string[];
+  recommended_next_steps?: string[];
   evaluated_at: string;
 }
 
 export interface OpportunityComparisonItem {
   opportunity_id: string;
-  title: string;
-  provider: string;
-  university: string | null;
+  title?: string;
+  opportunity_title?: string;
+  provider?: string;
+  provider_name?: string | null;
+  university?: string | null;
+  university_name?: string | null;
   funding_classification: string;
   verification_status: string;
   earliest_deadline: string | null;
@@ -299,8 +325,11 @@ export interface OpportunityComparisonItem {
 }
 
 export interface ComparisonResponse {
-  academic_cycle: string;
-  comparisons: OpportunityComparisonItem[];
+  academic_cycle?: string;
+  items?: OpportunityComparisonItem[];
+  comparisons?: OpportunityComparisonItem[];
+  ordering_rule?: string;
+  total_compared?: number;
 }
 
 export type ApplicationStatus =

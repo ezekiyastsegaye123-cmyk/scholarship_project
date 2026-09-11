@@ -149,10 +149,22 @@ export async function fetchOpportunityDetail(id: string): Promise<OpportunityDet
   return request<OpportunityDetail>(`/opportunities/${encodeURIComponent(id)}`);
 }
 
+function formatProfileForBackend(profile: StudentProfile) {
+  return {
+    ...profile,
+    residence_country: profile.country_of_residence || profile.citizenship_country || 'US',
+    intended_degree_level: profile.degree_level || 'BACHELOR',
+    intended_destination_country: 'US',
+    sat_score: profile.sat_total ?? undefined,
+    act_score: profile.act_composite ?? undefined,
+    prepared_materials: profile.prepared_components || [],
+  };
+}
+
 export async function submitStudentProfile(profile: StudentProfile): Promise<StudentProfile> {
   return request<StudentProfile>('/student-profile', {
     method: 'POST',
-    body: JSON.stringify(profile),
+    body: JSON.stringify(formatProfileForBackend(profile)),
   });
 }
 
@@ -161,10 +173,12 @@ export async function evaluateOpportunity(
   profile: StudentProfile,
   allowPartiallyVerified: boolean = false
 ): Promise<EligibilityEvaluationResult> {
+  const formatted = formatProfileForBackend(profile);
   return request<EligibilityEvaluationResult>(`/opportunities/${encodeURIComponent(id)}/evaluate`, {
     method: 'POST',
     body: JSON.stringify({
-      student_profile: profile,
+      profile: formatted,
+      student_profile: formatted,
       allow_partially_verified: allowPartiallyVerified,
       target_academic_cycle: profile.target_academic_cycle || '2026-2027',
     }),
@@ -176,10 +190,12 @@ export async function counselOpportunity(
   profile: StudentProfile,
   referenceDate: string = '2026-11-01'
 ): Promise<CounselorAssessmentResult> {
+  const formatted = formatProfileForBackend(profile);
   return request<CounselorAssessmentResult>(`/opportunities/${encodeURIComponent(id)}/counsel`, {
     method: 'POST',
     body: JSON.stringify({
-      student_profile: profile,
+      profile: formatted,
+      student_profile: formatted,
       reference_date: referenceDate,
       target_academic_cycle: profile.target_academic_cycle || '2026-2027',
     }),
@@ -190,11 +206,13 @@ export async function compareOpportunities(
   opportunityIds: string[],
   profile?: StudentProfile | null
 ): Promise<ComparisonResponse> {
+  const formatted = profile ? formatProfileForBackend(profile) : null;
   return request<ComparisonResponse>('/compare', {
     method: 'POST',
     body: JSON.stringify({
       opportunity_ids: opportunityIds,
-      student_profile: profile || null,
+      profile: formatted,
+      student_profile: formatted,
       target_academic_cycle: profile?.target_academic_cycle || '2026-2027',
     }),
   });

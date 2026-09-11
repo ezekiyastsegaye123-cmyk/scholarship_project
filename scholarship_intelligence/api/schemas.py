@@ -184,6 +184,17 @@ class StudentProfileInput(BaseModel):
             for forbidden in FORBIDDEN_PRIVACY_FIELDS:
                 if forbidden in data:
                     raise ValueError(f"Privacy violation: field '{forbidden}' is strictly forbidden in StudentProfile")
+            # Tolerant alias mappings for frontend convenience
+            if "country_of_residence" in data and "residence_country" not in data:
+                data["residence_country"] = data["country_of_residence"]
+            if "degree_level" in data and "intended_degree_level" not in data:
+                data["intended_degree_level"] = data["degree_level"]
+            if "sat_total" in data and "sat_score" not in data:
+                data["sat_score"] = data["sat_total"]
+            if "act_composite" in data and "act_score" not in data:
+                data["act_score"] = data["act_composite"]
+            if "prepared_components" in data and "prepared_materials" not in data:
+                data["prepared_materials"] = data["prepared_components"]
         return data
 
 
@@ -194,6 +205,13 @@ class EvaluationRequest(BaseModel):
     allow_partially_verified: bool = False
     evaluated_at: Optional[datetime] = None
 
+    @model_validator(mode="before")
+    @classmethod
+    def handle_profile_alias(cls, data: Any) -> Any:
+        if isinstance(data, dict) and "student_profile" in data and "profile" not in data:
+            data["profile"] = data["student_profile"]
+        return data
+
 
 class CounselRequest(BaseModel):
     """Request payload for multi-dimensional qualitative counselor assessment."""
@@ -201,6 +219,13 @@ class CounselRequest(BaseModel):
     target_academic_cycle: str = "2026-2027"
     reference_date: Optional[date] = None
     evaluated_at: Optional[datetime] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def handle_profile_alias(cls, data: Any) -> Any:
+        if isinstance(data, dict) and "student_profile" in data and "profile" not in data:
+            data["profile"] = data["student_profile"]
+        return data
 
 
 class ComparisonRequest(BaseModel):
@@ -210,6 +235,13 @@ class ComparisonRequest(BaseModel):
     target_academic_cycle: str = "2026-2027"
     reference_date: Optional[date] = None
     evaluated_at: Optional[datetime] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def handle_profile_alias(cls, data: Any) -> Any:
+        if isinstance(data, dict) and "student_profile" in data and "profile" not in data:
+            data["profile"] = data["student_profile"]
+        return data
 
 
 class ComparisonItem(BaseModel):
@@ -240,6 +272,17 @@ class ComparisonResponse(BaseModel):
     items: List[ComparisonItem]
     ordering_rule: str = "Ordered by requested selection order, then earliest deadline, then title"
     total_compared: int
+    comparisons: Optional[List[ComparisonItem]] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def populate_comparisons_alias(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if "items" in data and "comparisons" not in data:
+                data["comparisons"] = data["items"]
+            elif "comparisons" in data and "items" not in data:
+                data["items"] = data["comparisons"]
+        return data
 
 
 # ==============================================================================

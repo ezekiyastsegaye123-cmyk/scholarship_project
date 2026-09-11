@@ -14,7 +14,7 @@ describe('ApplicationTrackerPage Component', () => {
     slug: 'gates-cambridge-scholarship',
     provider_name: 'Bill & Melinda Gates Foundation',
     university_name: 'University of Cambridge',
-    degree_level: 'POSTGRADUATE',
+    target_degree_level: 'POSTGRADUATE',
     destination_country: 'GB',
     academic_cycle: '2026-2027',
     verification_status: 'VERIFIED',

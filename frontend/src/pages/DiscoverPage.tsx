@@ -236,7 +236,7 @@ export const DiscoverPage: React.FC<DiscoverPageProps> = ({
             </div>
 
             {/* Pagination */}
-            {data.pages > 1 && (
+            {((data as any).total_pages ?? data.pages ?? 1) > 1 && (
               <div className="pagination-bar" aria-label="Pagination">
                 <button
                   type="button"
@@ -247,13 +247,13 @@ export const DiscoverPage: React.FC<DiscoverPageProps> = ({
                   Previous
                 </button>
                 <span className="page-indicator">
-                  Page <strong>{data.page}</strong> of <strong>{data.pages}</strong>
+                  Page <strong>{data.page}</strong> of <strong>{(data as any).total_pages ?? data.pages}</strong>
                 </span>
                 <button
                   type="button"
                   className="btn-pagination"
-                  disabled={page >= data.pages}
-                  onClick={() => setPage((p) => Math.min(data.pages, p + 1))}
+                  disabled={page >= ((data as any).total_pages ?? data.pages ?? 1)}
+                  onClick={() => setPage((p) => Math.min((data as any).total_pages ?? data.pages ?? 1, p + 1))}
                 >
                   Next
                 </button>

@@ -32,7 +32,7 @@ const mockDetail: OpportunityDetail = {
   title: 'Robertson Scholars Leadership Program',
   provider_name: 'Robertson Scholars Program',
   university_name: 'Duke University',
-  degree_level: 'UNDERGRADUATE',
+  target_degree_level: 'UNDERGRADUATE',
   destination_country: 'US',
   academic_cycle: '2026-2027',
   verification_status: 'VERIFIED',

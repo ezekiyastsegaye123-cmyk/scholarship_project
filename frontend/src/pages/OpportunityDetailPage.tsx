@@ -223,7 +223,7 @@ export const OpportunityDetailPage: React.FC<OpportunityDetailPageProps> = ({
             </span>
           )}
           <span className="detail-entity">
-            Degree Level: <strong>{opp.degree_level.replace('_', ' ')}</strong>
+            Degree Level: <strong>{(opp.target_degree_level || opp.degree_level || 'UNDERGRADUATE').replace('_', ' ')}</strong>
           </span>
           <span className="detail-entity">
             Country: <strong>{opp.destination_country}</strong>
@@ -451,7 +451,9 @@ export const OpportunityDetailPage: React.FC<OpportunityDetailPageProps> = ({
                     <EligibilityBadge status={evalResult.status} />
                   </div>
                   <div className="eval-summary-explanation">
-                    <p className="text-sm text-gray-700 font-medium">{evalResult.explanation}</p>
+                    <p className="text-sm text-gray-700 font-medium">
+                      {evalResult.explanation || (evalResult as any).explanations?.join(' ') || `Status: ${evalResult.status}`}
+                    </p>
                     {evalResult.evaluation_contains_unverified_facts && (
                       <p className="text-xs text-amber-700 mt-1">
                         ⚠️ Note: This evaluation was executed with unverified facts enabled.
@@ -505,43 +507,58 @@ export const OpportunityDetailPage: React.FC<OpportunityDetailPageProps> = ({
                       </tr>
                     </thead>
                     <tbody>
-                      {evalResult.rule_results.map((r) => (
-                        <tr key={r.rule_id}>
-                          <td className="font-mono text-xs">{r.rule_id}</td>
-                          <td>
-                            <span className="badge badge-neutral text-xs">{r.rule_kind}</span>
-                          </td>
-                          <td>
-                            {r.satisfied === true ? (
-                              <span className="badge badge-eligible text-xs">
-                                <CheckCircle2 className="w-3 h-3 inline mr-1" /> Satisfied
-                              </span>
-                            ) : r.satisfied === false ? (
-                              <span className="badge badge-ineligible text-xs">
-                                <XCircle className="w-3 h-3 inline mr-1" /> Not Satisfied
-                              </span>
-                            ) : (
-                              <span className="badge badge-needs-info text-xs">
-                                <HelpCircle className="w-3 h-3 inline mr-1" /> {r.status}
-                              </span>
-                            )}
-                          </td>
-                          <td className="font-mono text-xs">
-                            {r.comparison_operator} {JSON.stringify(r.expected_value)}
-                          </td>
-                          <td className="font-mono text-xs">
-                            {r.actual_value !== undefined && r.actual_value !== null
-                              ? JSON.stringify(r.actual_value)
-                              : '<unknown>'}
-                          </td>
-                          <td className="text-xs text-gray-600">
-                            <div>{r.explanation}</div>
-                            {r.evidence_snippet && (
-                              <div className="quote-snippet mt-1 italic">"{r.evidence_snippet}"</div>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
+                      {((evalResult.rule_results || [
+                        ...((evalResult as any).satisfied_rules || []),
+                        ...((evalResult as any).failed_rules || []),
+                        ...((evalResult as any).unknown_rules || []),
+                        ...((evalResult as any).conflicting_rules || []),
+                        ...((evalResult as any).not_applicable_rules || []),
+                        ...((evalResult as any).supplementary_rules || []),
+                      ]) as any[]).map((r: any, idx: number) => {
+                        const ruleId = r.rule_id || r.field || `rule-${idx}`;
+                        const kind = r.rule_kind || r.kind || 'REQUIRED';
+                        const isSatisfied = r.satisfied === true || r.status === 'YES';
+                        const isNotSatisfied = r.satisfied === false || r.status === 'NO';
+                        const statusLabel = r.status || (isSatisfied ? 'YES' : isNotSatisfied ? 'NO' : 'UNKNOWN');
+                        return (
+                          <tr key={`${ruleId}-${idx}`}>
+                            <td className="font-mono text-xs">{ruleId}</td>
+                            <td>
+                              <span className="badge badge-neutral text-xs">{kind}</span>
+                            </td>
+                            <td>
+                              {isSatisfied ? (
+                                <span className="badge badge-eligible text-xs">
+                                  <CheckCircle2 className="w-3 h-3 inline mr-1" /> Satisfied
+                                </span>
+                              ) : isNotSatisfied ? (
+                                <span className="badge badge-ineligible text-xs">
+                                  <XCircle className="w-3 h-3 inline mr-1" /> Not Satisfied
+                                </span>
+                              ) : (
+                                <span className="badge badge-needs-info text-xs">
+                                  <HelpCircle className="w-3 h-3 inline mr-1" /> {statusLabel}
+                                </span>
+                              )}
+                            </td>
+                            <td className="font-mono text-xs">
+                              {r.comparison_operator ? `${r.comparison_operator} ` : ''}
+                              {r.expected_value !== undefined ? JSON.stringify(r.expected_value) : '-'}
+                            </td>
+                            <td className="font-mono text-xs">
+                              {r.actual_value !== undefined && r.actual_value !== null
+                                ? JSON.stringify(r.actual_value)
+                                : '<unknown>'}
+                            </td>
+                            <td className="text-xs text-gray-600">
+                              <div>{r.explanation || 'Evaluated against published constraint'}</div>
+                              {r.evidence_snippet && (
+                                <div className="quote-snippet mt-1 italic">"{r.evidence_snippet}"</div>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -709,23 +726,44 @@ export const OpportunityDetailPage: React.FC<OpportunityDetailPageProps> = ({
                 <div className="counselor-top-grid">
                   <div className="counselor-pill-card">
                     <span className="text-xs text-gray-500 font-semibold block uppercase">Academic Alignment</span>
-                    <span className="text-base font-bold text-brand">{counselResult.academic_alignment}</span>
+                    <span className="text-base font-bold text-brand">
+                      {typeof counselResult.academic_alignment === 'object'
+                        ? (counselResult.academic_alignment as any)?.level
+                        : counselResult.academic_alignment || 'NOT_ASSESSABLE'}
+                    </span>
                   </div>
                   <div className="counselor-pill-card">
                     <span className="text-xs text-gray-500 font-semibold block uppercase">Geographic Alignment</span>
-                    <span className="text-base font-bold text-brand">{counselResult.geographic_alignment}</span>
+                    <span className="text-base font-bold text-brand">
+                      {typeof counselResult.geographic_alignment === 'object'
+                        ? (counselResult.geographic_alignment as any)?.level
+                        : counselResult.geographic_alignment || 'UNKNOWN'}
+                    </span>
                   </div>
                   <div className="counselor-pill-card">
                     <span className="text-xs text-gray-500 font-semibold block uppercase">Funding Understanding</span>
-                    <span className="text-base font-bold text-brand">{counselResult.funding_understanding}</span>
+                    <span className="text-base font-bold text-brand">
+                      {counselResult.funding_understanding ||
+                        (counselResult as any).funding_assessment?.summary ||
+                        (counselResult as any).funding_assessment?.funding_classification ||
+                        'UNKNOWN'}
+                    </span>
                   </div>
                   <div className="counselor-pill-card">
                     <span className="text-xs text-gray-500 font-semibold block uppercase">Deadline Status</span>
-                    <span className="text-base font-bold text-brand">{counselResult.deadline_assessment.status}</span>
+                    <span className="text-base font-bold text-brand">
+                      {counselResult.deadline_assessment?.status ||
+                        (counselResult.deadline_assessment as any)?.summary ||
+                        'UPCOMING'}
+                    </span>
                   </div>
                   <div className="counselor-pill-card">
                     <span className="text-xs text-gray-500 font-semibold block uppercase">Application Readiness</span>
-                    <span className="text-base font-bold text-brand">{counselResult.application_readiness}</span>
+                    <span className="text-base font-bold text-brand">
+                      {typeof counselResult.application_readiness === 'object'
+                        ? (counselResult.application_readiness as any)?.level
+                        : counselResult.application_readiness || 'LIMITED'}
+                    </span>
                   </div>
                 </div>
 
@@ -734,11 +772,11 @@ export const OpportunityDetailPage: React.FC<OpportunityDetailPageProps> = ({
                     <h4 className="section-subtitle text-emerald-800">
                       <CheckCircle2 className="w-4 h-4 mr-1.5 inline" /> Strengths
                     </h4>
-                    {counselResult.strengths.length === 0 ? (
+                    {(counselResult.strengths || []).length === 0 ? (
                       <p className="text-xs text-gray-500">No verified strengths identified.</p>
                     ) : (
                       <ul className="counselor-bullets">
-                        {counselResult.strengths.map((s, idx) => (
+                        {(counselResult.strengths || []).map((s, idx) => (
                           <li key={idx} className="text-xs text-emerald-900">{s}</li>
                         ))}
                       </ul>
@@ -749,11 +787,11 @@ export const OpportunityDetailPage: React.FC<OpportunityDetailPageProps> = ({
                     <h4 className="section-subtitle text-red-800">
                       <XCircle className="w-4 h-4 mr-1.5 inline" /> Gaps & Incompatibilities
                     </h4>
-                    {counselResult.gaps.length === 0 ? (
+                    {(counselResult.gaps || []).length === 0 ? (
                       <p className="text-xs text-gray-500">No explicit incompatibilities identified.</p>
                     ) : (
                       <ul className="counselor-bullets">
-                        {counselResult.gaps.map((g, idx) => (
+                        {(counselResult.gaps || []).map((g, idx) => (
                           <li key={idx} className="text-xs text-red-900">{g}</li>
                         ))}
                       </ul>
@@ -764,11 +802,11 @@ export const OpportunityDetailPage: React.FC<OpportunityDetailPageProps> = ({
                     <h4 className="section-subtitle text-amber-800">
                       <HelpCircle className="w-4 h-4 mr-1.5 inline" /> Unknowns & Uncertainties
                     </h4>
-                    {counselResult.uncertainties.length === 0 ? (
+                    {((counselResult as any).unknowns || counselResult.uncertainties || []).length === 0 ? (
                       <p className="text-xs text-gray-500">All required factors have been verified.</p>
                     ) : (
                       <ul className="counselor-bullets">
-                        {counselResult.uncertainties.map((u, idx) => (
+                        {((counselResult as any).unknowns || counselResult.uncertainties || []).map((u: string, idx: number) => (
                           <li key={idx} className="text-xs text-amber-900">{u}</li>
                         ))}
                       </ul>
@@ -779,11 +817,11 @@ export const OpportunityDetailPage: React.FC<OpportunityDetailPageProps> = ({
                     <h4 className="section-subtitle text-brand">
                       <Sparkles className="w-4 h-4 mr-1.5 inline" /> Recommended Next Steps
                     </h4>
-                    {counselResult.recommended_actions.length === 0 ? (
+                    {((counselResult as any).recommended_next_steps || counselResult.recommended_actions || []).length === 0 ? (
                       <p className="text-xs text-gray-500">No action items recommended at this stage.</p>
                     ) : (
                       <ul className="counselor-bullets">
-                        {counselResult.recommended_actions.map((r, idx) => (
+                        {((counselResult as any).recommended_next_steps || counselResult.recommended_actions || []).map((r: string, idx: number) => (
                           <li key={idx} className="text-xs text-brand font-medium">{r}</li>
                         ))}
                       </ul>

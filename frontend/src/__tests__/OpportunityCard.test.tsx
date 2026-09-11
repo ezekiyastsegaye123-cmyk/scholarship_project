@@ -9,7 +9,7 @@ const mockOpp: OpportunitySummary = {
   title: 'Knight-Hennessy Scholars Program',
   provider_name: 'Stanford University',
   university_name: 'Stanford University',
-  degree_level: 'GRADUATE',
+  target_degree_level: 'GRADUATE',
   destination_country: 'US',
   academic_cycle: '2026-2027',
   verification_status: 'VERIFIED',

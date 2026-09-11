@@ -14,7 +14,7 @@ const mockPaginated: PaginatedOpportunities = {
       title: 'Rhodes Scholarship',
       provider_name: 'Rhodes Trust',
       university_name: 'University of Oxford',
-      degree_level: 'GRADUATE',
+      target_degree_level: 'GRADUATE',
       destination_country: 'GB',
       academic_cycle: '2026-2027',
       verification_status: 'VERIFIED',

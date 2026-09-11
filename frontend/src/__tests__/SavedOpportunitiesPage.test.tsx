@@ -14,7 +14,7 @@ describe('SavedOpportunitiesPage Component', () => {
     slug: 'rhodes-trust-scholarship',
     provider_name: 'Rhodes Trust',
     university_name: 'University of Oxford',
-    degree_level: 'POSTGRADUATE',
+    target_degree_level: 'POSTGRADUATE',
     destination_country: 'GB',
     academic_cycle: '2026-2027',
     verification_status: 'VERIFIED',
