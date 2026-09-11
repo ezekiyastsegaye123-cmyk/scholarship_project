@@ -1,4 +1,4 @@
-"""Property and determinism tests ensuring evaluation is 100% reproducible."""
+from datetime import datetime, timezone
 import json
 import pytest
 from scholarship_intelligence.evaluator.engine import EligibilityEvaluator
@@ -42,11 +42,14 @@ def test_determinism_across_100_runs():
         },
     ]
 
+    fixed_time = datetime(2026, 11, 1, 0, 0, 0, tzinfo=timezone.utc)
+
     # First run
-    first_result = evaluator.evaluate_rules(rules, profile)
-    first_dump = first_result.model_dump_json(exclude={"evaluated_at"})
+    first_result = evaluator.evaluate_rules(rules, profile, evaluated_at=fixed_time)
+    first_dump = first_result.model_dump_json()
 
     for _ in range(100):
-        run_res = evaluator.evaluate_rules(rules, profile)
-        run_dump = run_res.model_dump_json(exclude={"evaluated_at"})
+        run_res = evaluator.evaluate_rules(rules, profile, evaluated_at=fixed_time)
+        run_dump = run_res.model_dump_json()
         assert run_dump == first_dump
+

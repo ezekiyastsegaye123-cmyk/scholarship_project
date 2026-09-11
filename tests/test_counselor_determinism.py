@@ -1,5 +1,5 @@
 """Property and determinism tests ensuring counselor outputs are 100% reproducible."""
-from datetime import date
+from datetime import date, datetime, timezone
 from unittest.mock import MagicMock
 import pytest
 from scholarship_intelligence.counselor.service import ScholarshipCounselorService
@@ -72,11 +72,18 @@ def test_counselor_determinism_across_100_runs():
 
     ref_date = date(2026, 11, 1)
 
-    # First run
+    # First run (evaluated_at defaults deterministically to midnight UTC of reference_date)
     first_res = service.assess_opportunity(profile, opp, elig, reference_date=ref_date)
-    first_dump = first_res.model_dump_json(exclude={"evaluated_at"})
+    first_dump = first_res.model_dump_json()
 
     for _ in range(100):
         run_res = service.assess_opportunity(profile, opp, elig, reference_date=ref_date)
-        run_dump = run_res.model_dump_json(exclude={"evaluated_at"})
+        run_dump = run_res.model_dump_json()
         assert run_dump == first_dump
+
+    # Explicit evaluated_at parameter verification
+    custom_dt = datetime(2026, 11, 1, 14, 30, 45, tzinfo=timezone.utc)
+    res1 = service.assess_opportunity(profile, opp, elig, reference_date=ref_date, evaluated_at=custom_dt)
+    res2 = service.assess_opportunity(profile, opp, elig, reference_date=ref_date, evaluated_at=custom_dt)
+    assert res1.model_dump_json() == res2.model_dump_json()
+    assert res1.evaluated_at == custom_dt

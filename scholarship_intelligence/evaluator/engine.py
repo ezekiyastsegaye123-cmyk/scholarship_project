@@ -246,6 +246,7 @@ class EligibilityEvaluator:
         target_academic_cycle: str = "2026-2027",
         opportunity_academic_cycle: Optional[str] = None,
         verification_status: Optional[VerificationState] = None,
+        evaluated_at: Optional[datetime] = None,
     ) -> EligibilityEvaluationResult:
         """Evaluates a list of rules and aggregates into a final EligibilityEvaluationResult."""
         satisfied_rules: List[RuleEvaluationResult] = []
@@ -324,6 +325,7 @@ class EligibilityEvaluator:
 
         explanations.insert(0, summary)
 
+        eval_time = evaluated_at or datetime.now(timezone.utc)
         return EligibilityEvaluationResult(
             opportunity_id=opportunity_id,
             opportunity_title=opportunity_title,
@@ -340,6 +342,7 @@ class EligibilityEvaluator:
             not_applicable_rules=not_applicable_rules,
             supplementary_rules=supplementary_rules,
             explanations=explanations,
+            evaluated_at=eval_time,
             audit_metadata={
                 "rules_count": len(rules),
                 "required_count": len(satisfied_rules)
@@ -358,6 +361,7 @@ class EligibilityEvaluator:
         student_profile: Any,
         target_academic_cycle: str = "2026-2027",
         allow_partially_verified: bool = False,
+        evaluated_at: Optional[datetime] = None,
     ) -> EligibilityEvaluationResult:
         """Evaluates a ScholarshipOpportunity, strictly enforcing verification gating and cycle matching."""
         opp_id = getattr(opportunity, "id", None)
@@ -365,6 +369,8 @@ class EligibilityEvaluator:
         opp_cycle = getattr(opportunity, "academic_cycle", None)
         raw_v_status = getattr(opportunity, "verification_status", VerificationState.UNVERIFIED.value)
         v_status = VerificationState(raw_v_status) if isinstance(raw_v_status, str) else raw_v_status
+
+        eval_time = evaluated_at or datetime.now(timezone.utc)
 
         # 1. Verification-State Gating
         gated_reasons: dict[VerificationState, tuple[EligibilityStatus, str]] = {
@@ -401,6 +407,7 @@ class EligibilityEvaluator:
                 verification_status=v_status,
                 is_gated=True,
                 explanations=[reason],
+                evaluated_at=eval_time,
                 audit_metadata={"gating_reason": v_status.value},
             )
 
@@ -417,6 +424,7 @@ class EligibilityEvaluator:
                     "Evaluation blocked: Opportunity is only PARTIALLY_VERIFIED. "
                     "Evaluation requires allow_partially_verified=True flag."
                 ],
+                evaluated_at=eval_time,
                 audit_metadata={"gating_reason": "PARTIALLY_VERIFIED_DISALLOWED"},
             )
 
@@ -435,6 +443,7 @@ class EligibilityEvaluator:
                     f"'{opp_cycle}', but target evaluation cycle is '{target_academic_cycle}'. "
                     f"Rules cannot be assumed valid for different academic years."
                 ],
+                evaluated_at=eval_time,
                 audit_metadata={"gating_reason": "CYCLE_MISMATCH", "opportunity_cycle": opp_cycle},
             )
 
@@ -448,4 +457,5 @@ class EligibilityEvaluator:
             target_academic_cycle=target_academic_cycle,
             opportunity_academic_cycle=opp_cycle,
             verification_status=v_status,
+            evaluated_at=eval_time,
         )

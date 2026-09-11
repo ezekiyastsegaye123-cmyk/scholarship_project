@@ -54,11 +54,28 @@ class ScholarshipCounselorService:
         opportunity: Any,
         eligibility_result: EligibilityEvaluationResult,
         reference_date: Optional[date] = None,
+        evaluated_at: Optional[datetime] = None,
     ) -> CounselorAssessmentResult:
-        """Generates a complete qualitative counselor assessment."""
+        """Generates a complete qualitative counselor assessment.
+
+        Deterministic evaluation contract:
+        - If evaluated_at is provided, it is used verbatim as the evaluation timestamp.
+        - If evaluated_at is None and reference_date is provided, evaluated_at deterministically
+          defaults to midnight UTC on reference_date (ensuring identical input -> bitwise identical JSON).
+        - If both are None (only permissible when opportunity has no deadlines), evaluated_at
+          falls back to current UTC time.
+        """
         opp_id = getattr(opportunity, "id", None)
         opp_title = getattr(opportunity, "title", None) or "Scholarship Opportunity"
         student_id = getattr(student_profile, "id", None) if not isinstance(student_profile, dict) else student_profile.get("id")
+
+        # Resolve evaluation timestamp deterministically
+        if evaluated_at is not None:
+            eval_time = evaluated_at
+        elif reference_date is not None:
+            eval_time = datetime.combine(reference_date, datetime.min.time(), tzinfo=timezone.utc)
+        else:
+            eval_time = datetime.now(timezone.utc)
 
         # 1. Dimensional qualitative evaluations
         academic_ctx = assess_academic_alignment(student_profile, opportunity, eligibility_result)
@@ -339,5 +356,5 @@ class ScholarshipCounselorService:
             warnings=warnings,
             recommended_next_steps=recommended_next_steps,
             evidence_references=evidence_references,
-            evaluated_at=datetime.now(timezone.utc),
+            evaluated_at=eval_time,
         )

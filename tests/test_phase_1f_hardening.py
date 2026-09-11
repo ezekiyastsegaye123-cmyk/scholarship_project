@@ -11,7 +11,7 @@ Covers:
 8. AST check proving zero calls to date.today() in counselor codebase.
 """
 import ast
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock
 import pytest
@@ -27,12 +27,14 @@ from scholarship_intelligence.domain.enums import (
     DeadlineType,
     FundingClassification,
     FundingComponentType,
+    RuleKind,
     TriState,
     VerificationState,
 )
 from scholarship_intelligence.schemas.eligibility_eval import (
     EligibilityEvaluationResult,
     EligibilityStatus,
+    RuleEvaluationResult,
 )
 
 
@@ -286,3 +288,113 @@ def test_8_zero_date_today_calls_in_counselor_codebase():
                     pytest.fail(f"Prohibited call 'today()' found in {py_file} at line {node.lineno}")
                 elif isinstance(node.func, ast.Name) and node.func.id == "today":
                     pytest.fail(f"Prohibited call 'today()' found in {py_file} at line {node.lineno}")
+
+
+def test_9_complete_canonical_model_dump_json_determinism():
+    """Validates complete bitwise identical serialization without excluding evaluated_at.
+
+    Contract:
+    1. assess_opportunity with reference_date anchors evaluated_at deterministically to reference_date 00:00:00 UTC.
+    2. model_dump_json() across multiple runs produces bitwise identical strings without field exclusions.
+    3. Explicit evaluated_at parameter is preserved and produces bitwise identical model_dump_json().
+    """
+    counselor = ScholarshipCounselorService()
+    profile = {
+        "id": "std-det-1",
+        "citizenship_country": "ETH",
+        "residence_country": "ETH",
+        "intended_degree_level": "MASTER",
+        "intended_destination_country": "US",
+        "major": "Mechanical Engineering",
+        "gpa": 3.85,
+        "gpa_scale": 4.0,
+    }
+    opp = MagicMock(
+        id="opp-det-1",
+        title="Engineering Fellowship",
+        academic_cycle="2026-2027",
+        verification_status=VerificationState.VERIFIED,
+        primary_source_url="https://provider.org/fellowship",
+        deadlines=[
+            MagicMock(
+                deadline_date=date(2026, 12, 1),
+                deadline_type=DeadlineType.SCHOLARSHIP_APPLICATION,
+                is_strict=True,
+                source_evidence_snippet="Final deadline Dec 1, 2026",
+            )
+        ],
+        funding_details=[
+            MagicMock(
+                classification=FundingClassification.FULL_FUNDING,
+                funding_components=[
+                    MagicMock(
+                        component_type=FundingComponentType.TUITION,
+                        covers_full=True,
+                        source_evidence_snippet="Covers full tuition costs",
+                    ),
+                    MagicMock(
+                        component_type=FundingComponentType.STIPEND,
+                        covers_full=True,
+                        source_evidence_snippet="Provides full monthly living stipend of $2,000",
+                    ),
+                ],
+                source_evidence_snippet="Complete full tuition and living stipend fellowship",
+            )
+        ],
+        eligibility_rules=[
+            MagicMock(
+                rule_id="r1",
+                kind=RuleKind.REQUIRED,
+                field_name="gpa",
+                comparison_operator="GTE",
+                expected_value={"min": 3.5},
+                source_evidence_snippet="GPA must be at least 3.5",
+            )
+        ],
+        requirements=[],
+    )
+    elig = EligibilityEvaluationResult(
+        status=EligibilityStatus.ELIGIBLE,
+        target_academic_cycle="2026-2027",
+        satisfied_rules=[
+            RuleEvaluationResult(
+                rule_id="r1",
+                kind=RuleKind.REQUIRED,
+                status=TriState.YES,
+                explanation="GPA meets criteria",
+                field="gpa",
+                expected_value=3.5,
+                actual_value=3.85,
+            )
+        ],
+    )
+
+    ref_date = date(2026, 11, 1)
+
+    # 1. Verify automatic deterministic timestamp anchoring from reference_date
+    res1 = counselor.assess_opportunity(profile, opp, elig, reference_date=ref_date)
+    expected_timestamp = datetime(2026, 11, 1, 0, 0, 0, tzinfo=timezone.utc)
+    assert res1.evaluated_at == expected_timestamp
+
+    # 2. Verify bitwise identical serialization without any exclude set
+    canonical_json_1 = res1.model_dump_json()
+    for _ in range(50):
+        res_i = counselor.assess_opportunity(profile, opp, elig, reference_date=ref_date)
+        assert res_i.model_dump_json() == canonical_json_1
+        assert res_i.evaluated_at == expected_timestamp
+
+    # 3. Verify explicit evaluated_at timestamp parameterization
+    explicit_time = datetime(2026, 11, 1, 14, 45, 30, tzinfo=timezone.utc)
+    res_explicit_1 = counselor.assess_opportunity(
+        profile, opp, elig, reference_date=ref_date, evaluated_at=explicit_time
+    )
+    assert res_explicit_1.evaluated_at == explicit_time
+    canonical_json_explicit = res_explicit_1.model_dump_json()
+
+    for _ in range(50):
+        res_explicit_i = counselor.assess_opportunity(
+            profile, opp, elig, reference_date=ref_date, evaluated_at=explicit_time
+        )
+        assert res_explicit_i.model_dump_json() == canonical_json_explicit
+        assert res_explicit_i.evaluated_at == explicit_time
+

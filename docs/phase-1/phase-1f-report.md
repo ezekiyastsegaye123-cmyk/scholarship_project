@@ -29,10 +29,11 @@ PHASE 1F: BENCHMARK, STRESS & FINAL PHASE 1 EVALUATION (VALIDATION COMPLETE)
 The system was evaluated under strict conditions of functional correctness, epistemic safety, determinism, adversarial resilience, source traceability, and performance under stress load.
 
 ### Key Validation Outcomes:
-- **Test Suite Coverage:** 247 passed automated tests across 40 test modules (182 pre-existing + 56 Phase 1F initial validation + 9 Phase 1F final hardening tests) running in ~6.4s.
+- **Test Suite Coverage:** 248 passed automated tests across 40 test modules (182 pre-existing + 56 Phase 1F initial validation + 10 Phase 1F final hardening tests) running in ~6.5s.
 - **Benchmark Evaluation:** All 22 comprehensive benchmarks (Benchmark A through Benchmark V) pass unconditionally.
 - **Full Funding Evidence Invariant:** `FULL_FUNDING` strictly requires genuine supporting evidence for both tuition and comprehensive living support (room + meals, or living stipend); unevidenced or placeholder snippets are rejected.
 - **Strict Machine-Clock Elimination:** Zero calls to `date.today()` in counselor logic; deadline evaluation strictly requires an explicit `reference_date: date` and raises `ValueError` if missing.
+- **Canonical Output Determinism:** `model_dump_json()` across consecutive runs produces 100% bitwise identical JSON without field exclusions. In `ScholarshipCounselorService.assess_opportunity()`, `evaluated_at` is deterministically anchored to `reference_date` (at 00:00:00 UTC) or an explicit caller-supplied `evaluated_at` datetime.
 - **Epistemic Invariants:** `UNKNOWN != NO`, `UNKNOWN != YES`, `UNKNOWN != NOT_APPLICABLE`, `UNKNOWN != INELIGIBLE`, `CONFLICTING != NO`, `CONFLICTING != YES`, `CONFLICTING != VERIFIED` are strictly preserved across all evaluators and counselor dimensions.
 - **Contract Preservation:** Phase 1E preserves Phase 1D eligibility statuses (`ELIGIBLE`, `INELIGIBLE`, `NEEDS_INFORMATION`, `GATED_UNVERIFIED`, `NEEDS_REVIEW`, `OUTDATED_CYCLE`) with 100% fidelity.
 - **Verification Gating:** All 7 verification states (`VERIFIED`, `PARTIALLY_VERIFIED`, `CONFLICTING`, `OUTDATED`, `UNVERIFIED`, `SOURCE_UNAVAILABLE`, `QUARANTINED_FOR_REVIEW`) are surfaced with transparent warnings and mandatory gates.
@@ -49,8 +50,8 @@ Current Branch: main
 Baseline Approved Commit: 3759b36
 Existing Test Count (pre-Phase 1F): 182 passed tests
 Phase 1F Validation Tests: 56 passed tests
-Phase 1F Hardening Tests: 9 passed tests
-Total Test Count: 247 passed tests (100% passing)
+Phase 1F Hardening Tests: 10 passed tests
+Total Test Count: 248 passed tests (100% passing)
 ```
 
 ### Phase Milestones Verified:
@@ -204,8 +205,9 @@ Every Phase 1C verification state is handled with strict transparency:
 ## 9. Determinism Results
 
 Retained and verified 100-run determinism tests in `tests/test_counselor_determinism.py` and `tests/test_evaluator_determinism.py`:
-- 100 consecutive runs of identical inputs produce bitwise identical JSON representations.
-- **Strict Machine-Clock Elimination:** Production implementation contains zero calls to `date.today()`. `assess_deadlines()` strictly requires `reference_date: date` and raises a `ValueError` validation error if omitted or None. In `ScholarshipCounselorService.assess_opportunity()`, when deadlines are published, omitting `reference_date` raises an explicit `ValueError`. Machine clock fallback is strictly prohibited.
+- **Complete Canonical Serialization Determinism:** 100 consecutive runs of identical inputs produce 100% bitwise identical JSON representations via `model_dump_json()` without any field exclusions (`exclude={"evaluated_at"}` removed entirely).
+- **Evaluation Timestamp Parameterization:** In `ScholarshipCounselorService.assess_opportunity()`, `evaluated_at` is parameterized. When `reference_date` is provided, `evaluated_at` defaults deterministically to midnight UTC on `reference_date` (`00:00:00 UTC`), guaranteeing pure referential transparency (`identical input -> bitwise identical output`). Callers can also supply an explicit `evaluated_at: datetime` which is preserved verbatim.
+- **Strict Machine-Clock Elimination:** Production implementation contains zero calls to `date.today()`. `assess_deadlines()` strictly requires `reference_date: date` and raises a `ValueError` validation error if omitted or None. In `ScholarshipCounselorService.assess_opportunity()`, when deadlines are published, omitting `reference_date` raises an explicit `ValueError`.
 - Zero non-deterministic dictionary iteration.
 - Zero non-deterministic random IDs or seeds.
 
@@ -250,14 +252,14 @@ All 182 pre-existing tests authored across Phases 1A, 1B, 1C, 1D, and 1E continu
 - Phase 1D Eligibility Evaluator: 48 passed tests
 - Phase 1E Qualitative Counselor: 58 passed tests
 - Phase 1F Benchmark & Invariant Suite: 56 passed tests
-- Phase 1F Final Hardening Suite: 9 passed tests
-- **Total Passing Tests:** **247 passed tests in ~6.4s** (`python -m pytest -q`).
+- Phase 1F Final Hardening Suite: 10 passed tests
+- **Total Passing Tests:** **248 passed tests in ~6.5s** (`python -m pytest -q`).
 
 ---
 
 ## 14. Defects Found & Calibrated
 
-During Phase 1F benchmark, stress, and hardening execution, five integration and semantic defects were identified, fixed, and covered with regression tests:
+During Phase 1F benchmark, stress, and hardening execution, six integration and semantic defects were identified, fixed, and covered with regression tests:
 
 ### Defect 1: Verification Context Omitted Entity-Level Partially Verified State
 - **Root Cause:** `contains_unverified` checked only `eligibility_result.evaluation_contains_unverified_facts`, missing cases where the opportunity entity itself was marked `PARTIALLY_VERIFIED`.
@@ -288,6 +290,12 @@ During Phase 1F benchmark, stress, and hardening execution, five integration and
 - **Severity:** High (Epistemic Contract).
 - **Fix:** Created `is_genuine_evidence()` rejecting `None`, empty strings, and known placeholder strings (`"Primary authoritative opportunity source"`, `"Verified source"`, `"Funding evidence"`, `"Official source"`). If living support lacks genuine evidence, `FULL_FUNDING` is downgraded to `FULL_TUITION`. If components are unevidenced or placeholder-only, `FULL_FUNDING` is downgraded to `PARTIAL_FUNDING` with an unconfirmed full funding warning.
 - **Regression Test:** `tests/test_phase_1f_hardening.py::test_1_full_funding_with_genuine_tuition_and_living_evidence`, `test_2_full_funding_label_with_tuition_evidence_but_no_living_evidence_downgrades`, `test_3_full_funding_with_components_but_all_evidence_missing_rejected`, `test_4_full_funding_with_placeholder_evidence_rejected`.
+
+### Defect 6: Non-Deterministic Timestamp in Canonical Output Serialization
+- **Root Cause:** `ScholarshipCounselorService.assess_opportunity` unconditionally instantiated `evaluated_at=datetime.now(timezone.utc)`. This caused consecutive evaluations to emit differing timestamps, and the determinism tests previously had to strip `evaluated_at` using `model_dump_json(exclude={"evaluated_at"})`.
+- **Severity:** Medium (Canonical Output Determinism).
+- **Fix:** Added `evaluated_at: Optional[datetime] = None` parameter to `assess_opportunity` and `EligibilityEvaluator.evaluate_rules` / `evaluate_opportunity`. In `assess_opportunity`, when `reference_date` is provided, `evaluated_at` deterministically defaults to midnight UTC of `reference_date` (`datetime.combine(reference_date, datetime.min.time(), tzinfo=timezone.utc)`), ensuring identical inputs produce 100% bitwise identical `model_dump_json()` outputs with zero field exclusions. Explicit `evaluated_at` is preserved verbatim.
+- **Regression Test:** `tests/test_counselor_determinism.py`, `tests/test_evaluator_determinism.py`, and `tests/test_phase_1f_hardening.py::test_9_complete_canonical_model_dump_json_determinism`.
 
 ---
 
