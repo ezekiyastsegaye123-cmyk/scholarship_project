@@ -13,6 +13,7 @@ import {
   TriStateBadge,
   FreshnessBadge,
 } from '../components/StatusBadges';
+import { AICounselorPanel } from '../components/AICounselorPanel';
 import {
   ArrowLeft,
   ExternalLink,
@@ -43,6 +44,8 @@ interface OpportunityDetailPageProps {
   isSaved?: boolean;
   onToggleSave?: (id: string) => void;
   onTrackApplication?: (id: string) => void;
+  isAuthenticated?: boolean;
+  onOpenAuthModal?: () => void;
 }
 
 export const OpportunityDetailPage: React.FC<OpportunityDetailPageProps> = ({
@@ -55,6 +58,8 @@ export const OpportunityDetailPage: React.FC<OpportunityDetailPageProps> = ({
   isSaved,
   onToggleSave,
   onTrackApplication,
+  isAuthenticated,
+  onOpenAuthModal,
 }) => {
   const [opp, setOpp] = useState<OpportunityDetail | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -787,6 +792,16 @@ export const OpportunityDetailPage: React.FC<OpportunityDetailPageProps> = ({
                 </div>
               </div>
             )}
+
+            {/* Phase 5 Grounded Interactive AI Counselor Panel */}
+            <div className="mt-8">
+              <AICounselorPanel
+                opportunityId={opp.id}
+                opportunityTitle={opp.title}
+                isAuthenticated={!!isAuthenticated}
+                onOpenAuthModal={onOpenAuthModal}
+              />
+            </div>
           </div>
         )}
 

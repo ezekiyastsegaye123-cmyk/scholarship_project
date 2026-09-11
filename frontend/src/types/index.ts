@@ -396,3 +396,45 @@ export interface PersistentProfile {
   created_at: string;
   updated_at: string;
 }
+
+// ==============================================================================
+// PHASE 5: AI COUNSELOR SCHEMAS
+// ==============================================================================
+
+export type EpistemicStatus =
+  | 'GROUNDED'
+  | 'PARTIALLY_GROUNDED'
+  | 'INSUFFICIENT_INFORMATION'
+  | 'CONFLICTING_INFORMATION';
+
+export interface SourceCitation {
+  title: string;
+  url?: string | null;
+  authority_tier?: string | null;
+  verification_status?: string | null;
+  evidence_quote?: string | null;
+  is_primary: boolean;
+}
+
+export interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export interface AICounselorRequest {
+  opportunity_id: string;
+  message: string;
+  conversation_history?: ChatMessage[];
+}
+
+export interface AICounselorResponse {
+  answer: string;
+  epistemic_status: EpistemicStatus;
+  warnings: string[];
+  sources: SourceCitation[];
+  known_facts: string[];
+  unknowns: string[];
+  next_steps: string[];
+  disclaimer: string;
+  is_fallback: boolean;
+}

@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from scholarship_intelligence.api.routes import (
+    ai_counselor,
     applications,
     auth,
     comparison,
@@ -53,6 +54,7 @@ app.include_router(saved_opportunities.router, prefix=api_prefix)
 app.include_router(applications.router, prefix=api_prefix)
 app.include_router(comparison.router, prefix=api_prefix)
 app.include_router(counselor.router, prefix=api_prefix)
+app.include_router(ai_counselor.router, prefix=api_prefix)
 app.include_router(ingestion.router, prefix=api_prefix)
 
 

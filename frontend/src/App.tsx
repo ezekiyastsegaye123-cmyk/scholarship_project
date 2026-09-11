@@ -293,6 +293,8 @@ export const App: React.FC = () => {
             isSaved={savedIds.includes(selectedOpportunityId)}
             onToggleSave={handleToggleSave}
             onTrackApplication={handleTrackApplication}
+            isAuthenticated={!!currentUser}
+            onOpenAuthModal={() => setIsAuthModalOpen(true)}
           />
         ) : currentTab === 'discover' ? (
           <DiscoverPage

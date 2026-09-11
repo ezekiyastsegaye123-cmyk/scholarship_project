@@ -14,6 +14,8 @@ import type {
   ApplicationStatus,
   PersistentComparisonResponse,
   PersistentProfile,
+  AICounselorResponse,
+  ChatMessage,
 } from '../types';
 
 const API_BASE = '/api';
@@ -358,6 +360,25 @@ export async function removeComparisonSelection(opportunityId: string): Promise<
 export async function clearComparisonSelections(): Promise<PersistentComparisonResponse> {
   return request<PersistentComparisonResponse>('/comparison', {
     method: 'DELETE',
+  });
+}
+
+// -----------------------------------------------------------------------------
+// PHASE 5: GROUNDED AI COUNSELOR
+// -----------------------------------------------------------------------------
+
+export async function askAICounselor(
+  opportunityId: string,
+  message: string,
+  conversationHistory: ChatMessage[] = []
+): Promise<AICounselorResponse> {
+  return request<AICounselorResponse>('/ai/counsel', {
+    method: 'POST',
+    body: JSON.stringify({
+      opportunity_id: opportunityId,
+      message,
+      conversation_history: conversationHistory,
+    }),
   });
 }
 
