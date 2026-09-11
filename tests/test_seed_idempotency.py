@@ -54,3 +54,22 @@ def test_seed_idempotency(db_session):
     assert len(clark.deadlines) == 2
     assert len(clark.verification_records) == 1
     assert len(clark.conflict_records) == 1
+
+
+def test_seed_transactional_rollback(db_session, monkeypatch):
+    """Verifies that if an error occurs during seeding, the transaction rolls back cleanly."""
+    import pytest
+    from scholarship_intelligence.seed import loader
+
+    # Force an exception during seeding
+    def faulty_compute(*args, **kwargs):
+        raise RuntimeError("Simulated transient pipeline failure")
+
+    monkeypatch.setattr(loader, "compute_fingerprint", faulty_compute)
+
+    with pytest.raises(RuntimeError, match="Simulated transient pipeline failure"):
+        loader.seed_database(db_session)
+
+    # Verify no partial records were committed
+    assert db_session.query(ScholarshipOpportunity).count() == 0
+    assert db_session.query(Award).count() == 0
