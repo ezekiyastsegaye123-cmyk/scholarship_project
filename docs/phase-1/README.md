@@ -55,7 +55,7 @@ flowchart LR
 4. **Scale-Aware Comparisons & Membership:** Scale-aware GPA evaluation, strict field allowlist, case-insensitive country aliases, `IN` and `CONTAINS` operators.
 5. **Verification & Academic Cycle Gating:** Unverified, outdated, conflicting, or quarantined opportunities are gated; cycle mismatches return `OUTDATED_CYCLE`.
 6. **Deterministic Explanations:** Template-based explanations citing rule IDs, requirements, student actual values, and source evidence quotes.
-7. **141/141 Passing Tests:** 39 dedicated Phase 1D tests + 102 prior tests passing with zero regressions.
+7. **143/143 Passing Tests:** 41 dedicated Phase 1D tests + 102 prior tests passing with zero regressions.
 
 ---
 

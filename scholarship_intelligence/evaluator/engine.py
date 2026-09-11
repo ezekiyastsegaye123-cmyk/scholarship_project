@@ -56,6 +56,7 @@ class EligibilityEvaluator:
         kind: RuleKind = RuleKind.REQUIRED,
         evidence_snippet: Optional[str] = None,
         description: Optional[str] = None,
+        is_verified: bool = True,
     ) -> RuleEvaluationResult:
         """Evaluates a validated rule expression AST against a student profile."""
         # Validate AST before evaluation
@@ -129,6 +130,7 @@ class EligibilityEvaluator:
                 scale=scale,
                 student_scale=student_scale,
                 evidence_snippet=evidence_snippet,
+                is_verified=is_verified,
                 sub_results=[],
             )
 
@@ -151,6 +153,7 @@ class EligibilityEvaluator:
                     kind=kind,
                     evidence_snippet=evidence_snippet,
                     description=description,
+                    is_verified=is_verified,
                 )
                 sub_results.append(sub_res)
 
@@ -187,6 +190,7 @@ class EligibilityEvaluator:
                 expected_value=None,
                 actual_value=None,
                 evidence_snippet=evidence_snippet,
+                is_verified=is_verified,
                 sub_results=sub_results,
             )
 
@@ -205,12 +209,14 @@ class EligibilityEvaluator:
             expr = rule.get("expression") or rule.get("expression_json")
             evidence = rule.get("source_evidence_snippet")
             desc = rule.get("description")
+            is_verified = bool(rule.get("is_verified", True))
         elif isinstance(rule, EligibilityRuleDefinition):
             rule_id = rule.rule_id
             kind = rule.kind
             expr = rule.expression
             evidence = rule.source_evidence_snippet
             desc = rule.description
+            is_verified = getattr(rule, "is_verified", True)
         else:
             # SQLAlchemy model or duck-typed object
             rule_id = getattr(rule, "rule_id", "rule_model")
@@ -219,6 +225,7 @@ class EligibilityEvaluator:
             expr = getattr(rule, "expression_json", None) or getattr(rule, "expression", None)
             evidence = getattr(rule, "source_evidence_snippet", None)
             desc = getattr(rule, "description", None)
+            is_verified = bool(getattr(rule, "is_verified", True))
 
         return self.evaluate_expression(
             expr=expr,
@@ -227,6 +234,7 @@ class EligibilityEvaluator:
             kind=kind,
             evidence_snippet=evidence,
             description=desc,
+            is_verified=is_verified,
         )
 
     def evaluate_rules(
@@ -266,6 +274,20 @@ class EligibilityEvaluator:
             else:
                 supplementary_rules.append(result)
 
+        # Check if evaluation contains unverified or partially verified facts
+        all_evaluated_rules = (
+            satisfied_rules
+            + failed_rules
+            + unknown_rules
+            + conflicting_rules
+            + not_applicable_rules
+            + supplementary_rules
+        )
+        contains_unverified_facts = (
+            verification_status == VerificationState.PARTIALLY_VERIFIED
+            or any(not r.is_verified for r in all_evaluated_rules)
+        )
+
         # Status aggregation logic
         if failed_rules:
             overall_status = EligibilityStatus.INELIGIBLE
@@ -293,6 +315,13 @@ class EligibilityEvaluator:
                 f"required eligibility condition(s)."
             )
 
+        if contains_unverified_facts:
+            explanations.insert(
+                0,
+                "[WARNING] Evaluation contains unverified facts: Opportunity or underlying rule(s) are only PARTIALLY_VERIFIED. "
+                "Findings must be confirmed against primary official sources before application.",
+            )
+
         explanations.insert(0, summary)
 
         return EligibilityEvaluationResult(
@@ -303,6 +332,7 @@ class EligibilityEvaluator:
             opportunity_academic_cycle=opportunity_academic_cycle,
             verification_status=verification_status,
             is_gated=False,
+            evaluation_contains_unverified_facts=contains_unverified_facts,
             satisfied_rules=satisfied_rules,
             failed_rules=failed_rules,
             unknown_rules=unknown_rules,
@@ -318,6 +348,7 @@ class EligibilityEvaluator:
                 + len(conflicting_rules)
                 + len(not_applicable_rules),
                 "supplementary_count": len(supplementary_rules),
+                "evaluation_contains_unverified_facts": contains_unverified_facts,
             },
         )
 

@@ -36,6 +36,7 @@ class RuleEvaluationResult(BaseModel):
     scale: Optional[float] = Field(None, description="Expected scale (e.g. GPA scale)")
     student_scale: Optional[float] = Field(None, description="Student's scale if applicable")
     evidence_snippet: Optional[str] = Field(None, description="Source provenance evidence text")
+    is_verified: bool = Field(True, description="True if rule is verified; False if unverified or partially verified")
     sub_results: List["RuleEvaluationResult"] = Field(default_factory=list, description="Operands evaluation for composite expressions")
 
     model_config = ConfigDict(from_attributes=True)
@@ -50,6 +51,10 @@ class EligibilityEvaluationResult(BaseModel):
     opportunity_academic_cycle: Optional[str] = Field(None, description="Cycle for which opportunity was verified")
     verification_status: Optional[VerificationState] = Field(None, description="Verification status of the opportunity")
     is_gated: bool = Field(False, description="True if evaluation was halted by verification or cycle gating")
+    evaluation_contains_unverified_facts: bool = Field(
+        False,
+        description="True if evaluation contains partially verified or unverified facts/rules",
+    )
     satisfied_rules: List[RuleEvaluationResult] = Field(default_factory=list, description="Required rules that evaluated to YES")
     failed_rules: List[RuleEvaluationResult] = Field(default_factory=list, description="Required rules that evaluated to NO")
     unknown_rules: List[RuleEvaluationResult] = Field(default_factory=list, description="Required rules that evaluated to UNKNOWN")

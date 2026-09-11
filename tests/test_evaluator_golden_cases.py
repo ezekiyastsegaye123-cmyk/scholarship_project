@@ -190,3 +190,54 @@ def test_golden_case_h_evidence_provenance_in_explanation(evaluator, standard_ru
     assert failed_rule.rule_id == "r_gpa"
     assert "Rule: r_gpa" in failed_rule.explanation
     assert "Applicants must present a cumulative GPA of 3.5 or higher" in failed_rule.explanation
+
+
+def test_golden_case_partially_verified_uncertainty_flagging(evaluator, standard_rules):
+    """Verify allow_partially_verified=True proceeds with dedicated uncertainty flagging."""
+    profile = {"gpa": 3.9, "citizenship_country": "ETH"}
+    opp = MagicMock()
+    opp.id = "opp-789"
+    opp.title = "Partially Verified Grant"
+    opp.verification_status = VerificationState.PARTIALLY_VERIFIED.value
+    opp.academic_cycle = "2026-2027"
+    opp.eligibility_rules = standard_rules
+
+    # 1. Without allow_partially_verified=True -> GATED
+    res_gated = evaluator.evaluate_opportunity(opp, profile, allow_partially_verified=False)
+    assert res_gated.is_gated is True
+    assert res_gated.status == EligibilityStatus.GATED_UNVERIFIED
+
+    # 2. With allow_partially_verified=True -> evaluates but with explicit uncertainty flag
+    res_allowed = evaluator.evaluate_opportunity(opp, profile, allow_partially_verified=True)
+    assert res_allowed.is_gated is False
+    assert res_allowed.status == EligibilityStatus.ELIGIBLE
+    assert res_allowed.evaluation_contains_unverified_facts is True
+    assert "contains unverified facts" in res_allowed.explanations[1].lower() or "contains unverified facts" in res_allowed.explanations[0].lower()
+    assert res_allowed.audit_metadata["evaluation_contains_unverified_facts"] is True
+
+
+def test_golden_case_unverified_rule_sets_uncertainty_flag(evaluator):
+    """Verify an individual rule with is_verified=False marks evaluation as containing unverified facts."""
+    profile = {"gpa": 3.9, "citizenship_country": "ETH"}
+    rules = [
+        {
+            "rule_id": "r1",
+            "kind": "REQUIRED",
+            "expression": {"op": "GTE", "field": "gpa", "value": 3.5, "scale": 4.0},
+            "is_verified": True,
+        },
+        {
+            "rule_id": "r2",
+            "kind": "REQUIRED",
+            "expression": {"op": "EQ", "field": "citizenship_country", "value": "ETH"},
+            "is_verified": False,  # Unverified candidate rule
+        },
+    ]
+
+    result = evaluator.evaluate_rules(rules, profile)
+    assert result.status == EligibilityStatus.ELIGIBLE
+    assert result.evaluation_contains_unverified_facts is True
+    assert result.satisfied_rules[0].is_verified is True
+    assert result.satisfied_rules[1].is_verified is False
+    assert result.audit_metadata["evaluation_contains_unverified_facts"] is True
+

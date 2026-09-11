@@ -161,11 +161,17 @@ Contradictory student information (e.g. multiple distinct nationalities for a sc
 
 ---
 
-## H. Verification-State Gating
+## H. Verification-State Gating & Uncertainty Flagging
 
 The evaluator protects students from unreliable or unverified data:
 - `VERIFIED`: Permitted for normal evaluation.
-- `PARTIALLY_VERIFIED`: Gated (`GATED_UNVERIFIED`) by default; requires explicit `allow_partially_verified=True` parameter to proceed.
+- `PARTIALLY_VERIFIED`:
+  - Default: Gated (`GATED_UNVERIFIED`).
+  - When `allow_partially_verified=True`: Evaluates with a dedicated uncertainty indicator:
+    - Sets `evaluation_contains_unverified_facts = True` on `EligibilityEvaluationResult`.
+    - Tracks `is_verified` per rule on `RuleEvaluationResult`.
+    - Injects top-level advisory warning: `"[WARNING] Evaluation contains unverified facts: Opportunity or underlying rule(s) are only PARTIALLY_VERIFIED. Findings must be confirmed against primary official sources before application."`
+    - Sets `"evaluation_contains_unverified_facts": True` in `audit_metadata`.
 - `UNVERIFIED`: Gated (`GATED_UNVERIFIED`). Rules are not evaluated as verified truth.
 - `OUTDATED`: Gated (`GATED_UNVERIFIED`). Rules must be reverified before evaluation.
 - `CONFLICTING`: Gated (`NEEDS_REVIEW`). Unresolved evidence conflict blocks evaluation.
@@ -234,17 +240,17 @@ Summary:
 - Phase 1A tests: **25 passed**
 - Phase 1B tests: **32 passed**
 - Phase 1C tests: **45 passed**
-- Phase 1D tests: **39 passed**
+- Phase 1D tests: **41 passed**
   - `test_evaluator_truth_tables.py` (7 tests covering full 25 AND, 25 OR, 5 NOT, multi-operand, commutativity, identity)
   - `test_evaluator_comparisons.py` (5 tests covering numeric comparisons, GPA scale mismatch, IN, CONTAINS, missing values)
   - `test_evaluator_unknown_semantics.py` (3 tests covering missing profile fields, negating unknown, aggregation to NEEDS_INFORMATION)
   - `test_evaluator_conflicts.py` (3 tests covering explicit flags, implicit contradictory scalar lists, aggregation to NEEDS_REVIEW)
   - `test_evaluator_validation.py` (6 tests covering depth limit > 5, invalid operator, unregistered field, operand counts)
   - `test_evaluator_safety.py` (2 tests covering AST codebase inspection, injection attempts)
-  - `test_evaluator_golden_cases.py` (8 tests covering Golden Cases A through H)
+  - `test_evaluator_golden_cases.py` (10 tests covering Golden Cases A through H, PARTIALLY_VERIFIED uncertainty flagging, and unverified rule flagging)
   - `test_evaluator_determinism.py` (1 test covering 100-run identical outcome reproducibility)
 
-**Total: 141 passed in 2.99s (0 failures)**
+**Total: 143 passed in 3.19s (0 failures)**
 
 ---
 
@@ -253,7 +259,7 @@ Summary:
 - All Phase 1A schemas, ORM models, and seed migrations remain 100% intact and passing.
 - All Phase 1B chunked streaming, extraction, and normalization invariants remain passing.
 - All Phase 1C authority ranking, liveness, soft-404, conflict resolution, and promotion tests remain passing.
-- Total test count expanded from 102 to 141 tests with zero regressions.
+- Total test count expanded from 102 to 143 tests with zero regressions.
 
 ---
 
