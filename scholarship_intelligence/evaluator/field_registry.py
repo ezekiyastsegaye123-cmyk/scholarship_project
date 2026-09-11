@@ -133,6 +133,18 @@ REGISTERED_FIELDS: dict[str, FieldMetadata] = {
         supported_ops={RuleComparisonOp.EQ, RuleComparisonOp.NEQ, RuleComparisonOp.IN},
         description="Relative academic standing or class rank tier",
     ),
+    "citizenship_is_non_us": FieldMetadata(
+        canonical_name="citizenship_is_non_us",
+        data_type="bool",
+        supported_ops={RuleComparisonOp.EQ, RuleComparisonOp.NEQ},
+        description="Whether student is a non-US citizen",
+    ),
+    "demonstrated_financial_need": FieldMetadata(
+        canonical_name="demonstrated_financial_need",
+        data_type="bool",
+        supported_ops={RuleComparisonOp.EQ, RuleComparisonOp.NEQ},
+        description="Whether student has demonstrated financial need",
+    ),
 }
 
 # Aliases mapping alternative domain rule field names to canonical fields
@@ -214,6 +226,17 @@ def extract_student_value(
         value = getattr(student_profile, canonical_name, None)
         if value is None and hasattr(student_profile, raw_field):
             value = getattr(student_profile, raw_field, None)
+
+    # Fallback derivation for registered boolean flags if not explicitly provided
+    if value is None:
+        if canonical_name == "citizenship_is_non_us":
+            c_val, _, _ = extract_student_value(student_profile, "citizenship_country")
+            if c_val is not None:
+                value = (str(c_val).strip().upper() not in ("US", "USA"))
+        elif canonical_name == "demonstrated_financial_need":
+            f_val, _, _ = extract_student_value(student_profile, "financial_need_tier")
+            if f_val is not None:
+                value = (str(f_val).strip().upper() in ("HIGH", "MODERATE", "LOW"))
     
     # 3. Detect implicit conflicting data (e.g. if field value itself is a set/list with conflicting values for a scalar field)
     meta = REGISTERED_FIELDS[canonical_name]
