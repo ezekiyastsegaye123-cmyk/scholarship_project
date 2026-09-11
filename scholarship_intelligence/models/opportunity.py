@@ -88,3 +88,6 @@ class ScholarshipOpportunity(Base, TimestampMixin):
     verification_records = relationship("VerificationRecord", back_populates="opportunity", cascade="all, delete-orphan")
     conflict_records = relationship("ConflictRecord", back_populates="opportunity", cascade="all, delete-orphan")
     application_requirements = relationship("ApplicationRequirement", back_populates="opportunity", cascade="all, delete-orphan")
+    verification_histories = relationship("VerificationHistory", back_populates="opportunity", cascade="all, delete-orphan")
+    source_liveness_logs = relationship("SourceLivenessLog", back_populates="opportunity", cascade="all, delete-orphan")
+

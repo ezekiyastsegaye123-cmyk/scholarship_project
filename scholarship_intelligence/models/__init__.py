@@ -11,6 +11,8 @@ from scholarship_intelligence.models.conflict import ConflictRecord
 from scholarship_intelligence.models.application_requirement import ApplicationRequirement
 from scholarship_intelligence.models.opportunity import ScholarshipOpportunity
 from scholarship_intelligence.models.student_profile import StudentProfile
+from scholarship_intelligence.models.verification_history import VerificationHistory
+from scholarship_intelligence.models.source_liveness import SourceLivenessLog
 
 __all__ = [
     "Base",
@@ -30,4 +32,7 @@ __all__ = [
     "ApplicationRequirement",
     "ScholarshipOpportunity",
     "StudentProfile",
+    "VerificationHistory",
+    "SourceLivenessLog",
 ]
+

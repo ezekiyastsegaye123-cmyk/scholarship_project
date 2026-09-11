@@ -17,16 +17,22 @@ class ConflictRecord(Base, TimestampMixin):
     source_a_url = Column(String(1000), nullable=False)
     source_b_value = Column(Text, nullable=False)
     source_b_url = Column(String(1000), nullable=False)
+    source_a_tier = Column(String(50), nullable=True)
+    source_b_tier = Column(String(50), nullable=True)
+    source_a_evidence = Column(Text, nullable=True)
+    source_b_evidence = Column(Text, nullable=True)
     resolution_status = Column(
         String(50),
         CheckConstraint(
-            f"resolution_status IN ('{ConflictStatus.OPEN.value}', '{ConflictStatus.RESOLVED_OFFICIAL_PREFERRED.value}', '{ConflictStatus.DISMISSED.value}')"
+            f"resolution_status IN ('{ConflictStatus.OPEN.value}', '{ConflictStatus.RESOLVED_OFFICIAL_PREFERRED.value}', '{ConflictStatus.RESOLVED_RECENCY_PREFERRED.value}', '{ConflictStatus.DISMISSED.value}')"
         ),
         nullable=False,
         default=ConflictStatus.OPEN.value,
     )
     resolution_notes = Column(Text, nullable=True)
+    resolved_at = Column(DateTime, nullable=True)
     recorded_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
 
     # Relationships
     opportunity = relationship("ScholarshipOpportunity", back_populates="conflict_records")
+

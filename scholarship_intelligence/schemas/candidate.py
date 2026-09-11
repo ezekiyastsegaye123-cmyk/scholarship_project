@@ -17,7 +17,7 @@ from scholarship_intelligence.domain.enums import (
     RuleKind,
     TriState,
 )
-from scholarship_intelligence.ingestion.status import FetchResult
+
 
 
 class CandidateEvidence(BaseModel):
@@ -127,7 +127,8 @@ class CandidateOpportunity(BaseModel):
 
 class CandidateStagingResult(BaseModel):
     """Output envelope of Phase 1B ingestion pipeline."""
-    fetch_result: FetchResult
+    fetch_result: Any
     candidate: Optional[CandidateOpportunity] = None
     evidence_items: List[CandidateEvidence] = Field(default_factory=list)
     warnings: List[str] = Field(default_factory=list)
+
